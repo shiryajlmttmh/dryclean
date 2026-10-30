@@ -1,0 +1,17 @@
+   {
+     "version": 3,
+     "configurePresets": [
+       {
+         "name": "x64-debug",
+         "displayName": "x64 Debug",
+         "generator": "Ninja",
+         "binaryDir": "${sourceDir}/out/build/${presetName}",
+         "architecture": { "value": "x64", "strategy": "external" },
+         "toolset": { "value": "host=x64", "strategy": "external" },
+         "cacheVariables": {
+           "CMAKE_BUILD_TYPE": "Debug",
+           "CMAKE_PREFIX_PATH": "C:/Qt/6.12.0/msvc2022_64"
+         }
+       }
+     ]
+   }

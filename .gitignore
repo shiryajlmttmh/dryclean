@@ -1,0 +1,38 @@
+# Сборка
+out/
+build/
+cmake-build-*/
+CMakeUserPresets.json
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.vcxproj.user
+
+# Объектные и исполняемые файлы
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+
+# Qt
+*.autosave
+*_autogen/
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Данные приложения (если каталог окажется внутри проекта)
+data/
+*.lock
+
+# Прочее
+.idea/
+.vscode/
+*.log
+Thumbs.db
