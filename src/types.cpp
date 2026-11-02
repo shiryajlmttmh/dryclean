@@ -25,7 +25,7 @@ template <class E, std::size_t N>
 std::string enum_to_string(E value, const std::array<const char*, N>& names, const char* type_name) {
     const auto index = static_cast<std::size_t>(value);
     if (index >= N) {
-        throw InvalidInputException(type_name, "enum value out of range");
+        throw InvalidInputException(type_name, "значение перечисления вне допустимого диапазона");
     }
     return names[index];
 }
@@ -37,7 +37,7 @@ E enum_from_string(const std::string& text, const std::array<const char*, N>& na
             return static_cast<E>(i);
         }
     }
-    throw InvalidInputException(type_name, "unknown value: " + text);
+    throw InvalidInputException(type_name, "неизвестное значение: " + text);
 }
 
 }
