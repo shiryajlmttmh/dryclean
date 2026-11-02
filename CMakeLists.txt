@@ -5,11 +5,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 add_library(core STATIC
     src/types.cpp
     src/pricing.cpp
+    src/exceptions.cpp
 )
 target_include_directories(core PUBLIC include)
 

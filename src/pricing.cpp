@@ -1,6 +1,6 @@
 #include "pricing.h"
 
-#include <stdexcept>
+#include "exceptions.h"
 
 double tariff(ServiceType service) {
     switch (service) {
@@ -13,7 +13,7 @@ double tariff(ServiceType service) {
         case ServiceType::Leather:
             return 65.0;
     }
-    throw std::invalid_argument("unknown ServiceType");
+    throw InvalidInputException("ServiceType", "unknown value");
 }
 
 Hours base_hours(ServiceType service) {
@@ -27,7 +27,7 @@ Hours base_hours(ServiceType service) {
         case ServiceType::Leather:
             return 144.0;
     }
-    throw std::invalid_argument("unknown ServiceType");
+    throw InvalidInputException("ServiceType", "unknown value");
 }
 
 double material_cost_k(MaterialGroup group) {
@@ -43,7 +43,7 @@ double material_cost_k(MaterialGroup group) {
         case MaterialGroup::NaturalFur:
             return 1.45;
     }
-    throw std::invalid_argument("unknown MaterialGroup");
+    throw InvalidInputException("MaterialGroup", "unknown value");
 }
 
 double material_time_k(MaterialGroup group) {
@@ -59,7 +59,7 @@ double material_time_k(MaterialGroup group) {
         case MaterialGroup::NaturalFur:
             return 1.5;
     }
-    throw std::invalid_argument("unknown MaterialGroup");
+    throw InvalidInputException("MaterialGroup", "unknown value");
 }
 
 double soil_k(SoilLevel level) {
@@ -71,7 +71,7 @@ double soil_k(SoilLevel level) {
         case SoilLevel::Heavy:
             return 1.3;
     }
-    throw std::invalid_argument("unknown SoilLevel");
+    throw InvalidInputException("SoilLevel", "unknown value");
 }
 
 double stain_surcharge(StainClass stain_class) {
@@ -83,5 +83,5 @@ double stain_surcharge(StainClass stain_class) {
         case StainClass::Special:
             return 20.0;
     }
-    throw std::invalid_argument("unknown StainClass");
+    throw InvalidInputException("StainClass", "unknown value");
 }

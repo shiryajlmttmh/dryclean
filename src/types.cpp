@@ -3,7 +3,8 @@
 #include <array>
 #include <cmath>
 #include <ratio>
-#include <stdexcept>
+
+#include "exceptions.h"
 
 namespace {
 
@@ -21,10 +22,10 @@ constexpr std::array<const char*, 8> kPerm{"ManageClients", "AcceptOrders", "Iss
                                            "BuildPlan",     "ConfirmPlan",  "ManageStock", "ManageStaff"};
 
 template <class E, std::size_t N>
-std::string enum_to_string(E value, const std::array<const char*, N>& names) {
+std::string enum_to_string(E value, const std::array<const char*, N>& names, const char* type_name) {
     const auto index = static_cast<std::size_t>(value);
     if (index >= N) {
-        throw std::invalid_argument("enum value out of range");
+        throw InvalidInputException(type_name, "enum value out of range");
     }
     return names[index];
 }
@@ -36,21 +37,21 @@ E enum_from_string(const std::string& text, const std::array<const char*, N>& na
             return static_cast<E>(i);
         }
     }
-    throw std::invalid_argument(std::string("unknown value of ") + type_name + ": " + text);
+    throw InvalidInputException(type_name, "unknown value: " + text);
 }
 
 }
 
-std::string to_string(ServiceType v) { return enum_to_string(v, kService); }
-std::string to_string(MaterialGroup v) { return enum_to_string(v, kMaterial); }
-std::string to_string(FabricGroup v) { return enum_to_string(v, kFabric); }
-std::string to_string(ColorGroup v) { return enum_to_string(v, kColor); }
-std::string to_string(SoilLevel v) { return enum_to_string(v, kSoil); }
-std::string to_string(StainClass v) { return enum_to_string(v, kStain); }
-std::string to_string(OrderStatus v) { return enum_to_string(v, kOrder); }
-std::string to_string(BatchStatus v) { return enum_to_string(v, kBatch); }
-std::string to_string(EmployeeRole v) { return enum_to_string(v, kRole); }
-std::string to_string(Permission v) { return enum_to_string(v, kPerm); }
+std::string to_string(ServiceType v) { return enum_to_string(v, kService, "ServiceType"); }
+std::string to_string(MaterialGroup v) { return enum_to_string(v, kMaterial, "MaterialGroup"); }
+std::string to_string(FabricGroup v) { return enum_to_string(v, kFabric, "FabricGroup"); }
+std::string to_string(ColorGroup v) { return enum_to_string(v, kColor, "ColorGroup"); }
+std::string to_string(SoilLevel v) { return enum_to_string(v, kSoil, "SoilLevel"); }
+std::string to_string(StainClass v) { return enum_to_string(v, kStain, "StainClass"); }
+std::string to_string(OrderStatus v) { return enum_to_string(v, kOrder, "OrderStatus"); }
+std::string to_string(BatchStatus v) { return enum_to_string(v, kBatch, "BatchStatus"); }
+std::string to_string(EmployeeRole v) { return enum_to_string(v, kRole, "EmployeeRole"); }
+std::string to_string(Permission v) { return enum_to_string(v, kPerm, "Permission"); }
 
 ServiceType parse_ServiceType(const std::string& s) {
     return enum_from_string<ServiceType>(s, kService, "ServiceType");
