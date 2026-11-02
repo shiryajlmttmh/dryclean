@@ -84,13 +84,18 @@ Permission parse_Permission(const std::string& s) {
     return enum_from_string<Permission>(s, kPerm, "Permission");
 }
 
-Hours hours_between(TimePoint end, TimePoint begin) {
-    return std::chrono::duration<double, std::ratio<3600>>(end - begin).count();
-}
+namespace {
+
+using FractionalHours = std::chrono::duration<double, std::ratio<3600>>;
+using FractionalMillis = std::chrono::duration<double, std::milli>;
+
+}  // namespace
+
+Hours hours_between(TimePoint end, TimePoint begin) { return FractionalHours(end - begin).count(); }
 
 TimePoint add_hours(TimePoint t, Hours h) {
-    const auto ms = static_cast<std::int64_t>(std::ceil(h * 3600000.0));
-    return t + std::chrono::milliseconds(ms);
+    const double millis = FractionalMillis(FractionalHours(h)).count();
+    return t + std::chrono::milliseconds(static_cast<std::int64_t>(std::ceil(millis)));
 }
 
 std::int64_t to_epoch_ms(TimePoint t) { return t.time_since_epoch().count(); }
