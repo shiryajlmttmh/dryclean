@@ -15,6 +15,10 @@ add_library(core STATIC
     src/types.cpp
     src/pricing.cpp
     src/exceptions.cpp
+    src/normalize.cpp
+    src/record_io.cpp
+    src/client.cpp
+    src/employee.cpp
 )
 target_include_directories(core PUBLIC include)
 

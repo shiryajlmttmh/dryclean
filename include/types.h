@@ -53,6 +53,8 @@ BatchStatus parse_BatchStatus(const std::string& s);
 EmployeeRole parse_EmployeeRole(const std::string& s);
 Permission parse_Permission(const std::string& s);
 
+bool is_valid(EmployeeRole role) noexcept;
+
 Hours hours_between(TimePoint end, TimePoint begin);
 
 TimePoint add_hours(TimePoint t, Hours h);

@@ -84,12 +84,14 @@ Permission parse_Permission(const std::string& s) {
     return enum_from_string<Permission>(s, kPerm, "Permission");
 }
 
+bool is_valid(EmployeeRole role) noexcept { return static_cast<std::size_t>(role) < kRole.size(); }
+
 namespace {
 
 using FractionalHours = std::chrono::duration<double, std::ratio<3600>>;
 using FractionalMillis = std::chrono::duration<double, std::milli>;
 
-}  // namespace
+}
 
 Hours hours_between(TimePoint end, TimePoint begin) { return FractionalHours(end - begin).count(); }
 
