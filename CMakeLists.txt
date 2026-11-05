@@ -21,6 +21,7 @@ add_library(core STATIC
     src/employee.cpp
     src/material.cpp
     src/machine.cpp
+    src/item.cpp
 )
 target_include_directories(core PUBLIC include)
 

@@ -5,6 +5,7 @@
 constexpr double kUrgentSurcharge = 0.5;
 constexpr double kUrgentTimeK = 0.4;
 constexpr Hours kStainHours = 0.5;
+constexpr double kLightStainMaxAreaCm2 = 25.0;
 
 double tariff(ServiceType service);
 Hours base_hours(ServiceType service);

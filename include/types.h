@@ -54,6 +54,11 @@ EmployeeRole parse_EmployeeRole(const std::string& s);
 Permission parse_Permission(const std::string& s);
 
 bool is_valid(ServiceType service) noexcept;
+bool is_valid(MaterialGroup group) noexcept;
+bool is_valid(FabricGroup group) noexcept;
+bool is_valid(ColorGroup group) noexcept;
+bool is_valid(SoilLevel level) noexcept;
+bool is_valid(StainClass stain_class) noexcept;
 bool is_valid(EmployeeRole role) noexcept;
 
 Hours hours_between(TimePoint end, TimePoint begin);

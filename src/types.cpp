@@ -86,6 +86,16 @@ Permission parse_Permission(const std::string& s) {
 
 bool is_valid(ServiceType service) noexcept { return static_cast<std::size_t>(service) < kService.size(); }
 
+bool is_valid(MaterialGroup group) noexcept { return static_cast<std::size_t>(group) < kMaterial.size(); }
+
+bool is_valid(FabricGroup group) noexcept { return static_cast<std::size_t>(group) < kFabric.size(); }
+
+bool is_valid(ColorGroup group) noexcept { return static_cast<std::size_t>(group) < kColor.size(); }
+
+bool is_valid(SoilLevel level) noexcept { return static_cast<std::size_t>(level) < kSoil.size(); }
+
+bool is_valid(StainClass stain_class) noexcept { return static_cast<std::size_t>(stain_class) < kStain.size(); }
+
 bool is_valid(EmployeeRole role) noexcept { return static_cast<std::size_t>(role) < kRole.size(); }
 
 namespace {
