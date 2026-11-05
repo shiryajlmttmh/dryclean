@@ -19,6 +19,8 @@ add_library(core STATIC
     src/record_io.cpp
     src/client.cpp
     src/employee.cpp
+    src/material.cpp
+    src/machine.cpp
 )
 target_include_directories(core PUBLIC include)
 

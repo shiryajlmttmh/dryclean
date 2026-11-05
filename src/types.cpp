@@ -84,6 +84,8 @@ Permission parse_Permission(const std::string& s) {
     return enum_from_string<Permission>(s, kPerm, "Permission");
 }
 
+bool is_valid(ServiceType service) noexcept { return static_cast<std::size_t>(service) < kService.size(); }
+
 bool is_valid(EmployeeRole role) noexcept { return static_cast<std::size_t>(role) < kRole.size(); }
 
 namespace {
