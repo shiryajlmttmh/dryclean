@@ -35,7 +35,7 @@ std::string phone_query_digits(const std::string& query) {
     return digits;
 }
 
-}  // namespace
+}
 
 Client::Client(std::string name, std::string phone, double discount) {
     set_name(std::move(name));
@@ -89,7 +89,7 @@ void Client::remove_order_id(Id order_id) {
 std::size_t Client::orders_count() const noexcept { return order_ids_.size(); }
 
 bool Client::matches(const std::string& query) const {
-    if (query.empty() || name_.find(query) != std::string::npos) {
+    if (query.empty() || to_lower_text(name_).find(to_lower_text(query)) != std::string::npos) {
         return true;
     }
     const std::string digits = phone_query_digits(query);
