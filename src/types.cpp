@@ -96,6 +96,10 @@ bool is_valid(SoilLevel level) noexcept { return static_cast<std::size_t>(level)
 
 bool is_valid(StainClass stain_class) noexcept { return static_cast<std::size_t>(stain_class) < kStain.size(); }
 
+bool is_valid(OrderStatus status) noexcept { return static_cast<std::size_t>(status) < kOrder.size(); }
+
+bool is_valid(BatchStatus status) noexcept { return static_cast<std::size_t>(status) < kBatch.size(); }
+
 bool is_valid(EmployeeRole role) noexcept { return static_cast<std::size_t>(role) < kRole.size(); }
 
 namespace {

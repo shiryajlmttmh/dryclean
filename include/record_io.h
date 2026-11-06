@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <istream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -22,6 +23,8 @@ public:
     void put_double(double value);
     void put_string(const std::string& value);
     void put_time(TimePoint value);
+    void put_optional_id(const std::optional<Id>& value);
+    void put_optional_time(const std::optional<TimePoint>& value);
     std::string str() const;
 
 private:
@@ -42,6 +45,8 @@ public:
     double get_double();
     std::string get_string();
     TimePoint get_time();
+    std::optional<Id> get_optional_id();
+    std::optional<TimePoint> get_optional_time();
     void finish();
 
 private:

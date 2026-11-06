@@ -9,17 +9,9 @@
 #include "exceptions.h"
 #include "normalize.h"
 #include "record_io.h"
+#include "validation.h"
 
 namespace {
-
-constexpr double kMinDiscount = 0.0;
-constexpr double kMaxDiscount = 1.0;
-
-void check_discount(double discount) {
-    if (!std::isfinite(discount) || discount < kMinDiscount || discount > kMaxDiscount) {
-        throw InvalidInputException("discount", "скидка должна быть в пределах от 0 до 1");
-    }
-}
 
 std::string phone_query_digits(const std::string& query) {
     std::string digits;
@@ -69,9 +61,7 @@ void Client::set_discount(double discount) {
 }
 
 void Client::add_order_id(Id order_id) {
-    if (order_id == 0) {
-        throw InvalidInputException("order_id", "идентификатор заказа не может быть нулевым");
-    }
+    check_nonzero_id("order_id", order_id);
     if (std::find(order_ids_.begin(), order_ids_.end(), order_id) != order_ids_.end()) {
         throw InvalidInputException("order_id", "заказ уже привязан к клиенту");
     }
@@ -102,14 +92,7 @@ void Client::validate() const {
         throw InvalidInputException("phone", "телефон должен храниться в нормализованном виде");
     }
     check_discount(discount_);
-    std::vector<Id> sorted = order_ids_;
-    std::sort(sorted.begin(), sorted.end());
-    if (!sorted.empty() && sorted.front() == 0) {
-        throw InvalidInputException("order_ids", "идентификатор заказа не может быть нулевым");
-    }
-    if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) {
-        throw InvalidInputException("order_ids", "список заказов содержит повторы");
-    }
+    check_unique_ids("order_ids", order_ids_);
 }
 
 bool Client::operator==(const Client& other) const noexcept { return id_ == other.id_; }

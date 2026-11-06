@@ -59,6 +59,8 @@ bool is_valid(FabricGroup group) noexcept;
 bool is_valid(ColorGroup group) noexcept;
 bool is_valid(SoilLevel level) noexcept;
 bool is_valid(StainClass stain_class) noexcept;
+bool is_valid(OrderStatus status) noexcept;
+bool is_valid(BatchStatus status) noexcept;
 bool is_valid(EmployeeRole role) noexcept;
 
 Hours hours_between(TimePoint end, TimePoint begin);

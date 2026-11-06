@@ -75,6 +75,20 @@ void RecordWriter::put_time(TimePoint value) {
     out_ << to_epoch_ms(value);
 }
 
+void RecordWriter::put_optional_id(const std::optional<Id>& value) {
+    put_bool(value.has_value());
+    if (value) {
+        put_id(*value);
+    }
+}
+
+void RecordWriter::put_optional_time(const std::optional<TimePoint>& value) {
+    put_bool(value.has_value());
+    if (value) {
+        put_time(*value);
+    }
+}
+
 std::string RecordWriter::str() const { return out_.str(); }
 
 RecordReader::RecordReader(std::string line) : in_(std::move(line)) { in_.imbue(std::locale::classic()); }
@@ -142,6 +156,20 @@ std::string RecordReader::get_string() {
 }
 
 TimePoint RecordReader::get_time() { return from_epoch_ms(parse_number<std::int64_t>(get_token())); }
+
+std::optional<Id> RecordReader::get_optional_id() {
+    if (!get_bool()) {
+        return std::nullopt;
+    }
+    return get_id();
+}
+
+std::optional<TimePoint> RecordReader::get_optional_time() {
+    if (!get_bool()) {
+        return std::nullopt;
+    }
+    return get_time();
+}
 
 void RecordReader::finish() {
     in_ >> std::ws;

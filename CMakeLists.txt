@@ -22,6 +22,10 @@ add_library(core STATIC
     src/material.cpp
     src/machine.cpp
     src/item.cpp
+    src/validation.cpp
+    src/status_record.cpp
+    src/order.cpp
+    src/batch.cpp
 )
 target_include_directories(core PUBLIC include)
 

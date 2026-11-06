@@ -11,6 +11,7 @@ constexpr std::size_t kMaxPhoneDigits = 15;
 constexpr std::size_t kMaxLoginLength = 32;
 constexpr const char* kBlanks = " \t\r\n";
 
+constexpr std::size_t kTwoByteLength = 2;
 constexpr unsigned char kAsciiLimit = 0x80;
 constexpr unsigned char kTwoByteMask = 0xE0;
 constexpr unsigned char kTwoByteMarker = 0xC0;
@@ -122,8 +123,8 @@ std::string to_lower_text(const std::string& text) {
     std::size_t i = 0;
     while (i < text.size()) {
         const auto lead = static_cast<unsigned char>(text[i]);
-        const bool has_pair = i + 1 < text.size();
-        const auto second = has_pair ? static_cast<unsigned char>(text[i + 1]) : static_cast<unsigned char>(0);
+        const bool has_pair = i + kTwoByteLength <= text.size();
+        const auto second = has_pair ? static_cast<unsigned char>(text[i + kTwoByteLength - 1]) : static_cast<unsigned char>(0);
         if (lead < kAsciiLimit) {
             result.push_back(to_lower_ascii(text[i]));
             ++i;
@@ -134,7 +135,7 @@ std::string to_lower_text(const std::string& text) {
             code_point = to_lower_cyrillic(code_point);
             result.push_back(static_cast<char>(kTwoByteMarker | (code_point >> kContinuationBits)));
             result.push_back(static_cast<char>(kContinuationMarker | (code_point & kContinuationDataMask)));
-            i += 2;
+            i += kTwoByteLength;
         } else {
             result.push_back(text[i]);
             ++i;
