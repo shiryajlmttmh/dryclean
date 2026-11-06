@@ -85,3 +85,7 @@ double stain_surcharge(StainClass stain_class) {
     }
     throw InvalidInputException("StainClass", "неизвестное значение");
 }
+
+double urgency_surcharge(bool urgent) { return urgent ? kUrgentSurcharge : kRegularSurcharge; }
+
+double urgency_time_k(bool urgent) { return urgent ? kUrgentTimeK : kRegularTimeK; }

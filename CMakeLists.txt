@@ -14,6 +14,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 add_library(core STATIC
     src/types.cpp
     src/pricing.cpp
+    src/services.cpp
     src/exceptions.cpp
     src/normalize.cpp
     src/record_io.cpp
