@@ -272,6 +272,70 @@ void BatchPlanner::evaluate(Plan& plan, const std::vector<PlanItem>& items,
     plan.average_load = count == 0 ? 0.0 : kPercent * fill_sum / static_cast<double>(count);
 }
 
+bool BatchPlanner::mergeable(const PlannedBatch& first, const PlannedBatch& second, const ConflictGraph& graph,
+                             const Machine& machine) {
+    if (first.machine_id != second.machine_id || first.service_type != second.service_type) {
+        return false;
+    }
+    if (first.total_weight_kg + second.total_weight_kg > machine.capacity_kg() + EPS) {
+        return false;
+    }
+    for (const Id left : first.item_ids) {
+        const auto node = graph.find(left);
+        if (node == graph.end()) {
+            continue;
+        }
+        for (const Id right : second.item_ids) {
+            if (node->second.count(right) != 0) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void BatchPlanner::merge_batches(Plan& plan, const ConflictGraph& graph, const std::vector<PlanItem>& items,
+                                 const std::vector<Machine>& machines, TimePoint now) const {
+    reschedule(plan, items, machines, now);
+    evaluate(plan, items, machines);
+    while (plan.batches.size() > 1) {
+        std::optional<Plan> best;
+        for (std::size_t i = 0; i < plan.batches.size(); ++i) {
+            const Machine* machine = find_machine(machines, plan.batches[i].machine_id);
+            if (machine == nullptr) {
+                continue;
+            }
+            for (std::size_t j = i + 1; j < plan.batches.size(); ++j) {
+                if (!mergeable(plan.batches[i], plan.batches[j], graph, *machine)) {
+                    continue;
+                }
+                Plan trial = plan;
+                PlannedBatch& target = trial.batches[i];
+                target.item_ids.insert(target.item_ids.end(), plan.batches[j].item_ids.begin(),
+                                       plan.batches[j].item_ids.end());
+                target.total_weight_kg += plan.batches[j].total_weight_kg;
+                trial.batches.erase(trial.batches.begin() + static_cast<std::ptrdiff_t>(j));
+                reschedule(trial, items, machines, now);
+                evaluate(trial, items, machines);
+                const bool improves = trial.objective < plan.objective - EPS ||
+                                      (std::abs(trial.objective - plan.objective) <= EPS &&
+                                       trial.batches.size() < plan.batches.size());
+                const bool better_than_best = !best || trial.objective < best->objective - EPS;
+                if (improves && better_than_best) {
+                    best = std::move(trial);
+                }
+            }
+        }
+        if (!best) {
+            break;
+        }
+        plan.batches = std::move(best->batches);
+        plan.objective = best->objective;
+        plan.average_load = best->average_load;
+        plan.late_count = best->late_count;
+    }
+}
+
 Plan BatchPlanner::plan_batches(const std::vector<PlanItem>& sorted, const ConflictGraph& graph,
                                 const std::vector<Machine>& machines, const std::vector<Material>& materials,
                                 TimePoint now) const {
@@ -372,8 +436,7 @@ Plan BatchPlanner::build_plan(std::vector<PlanItem> items, const std::vector<Mac
     plan.source_revision = source_revision;
     plan.built_at = now;
     plan.conflicts = std::move(graph);
-    reschedule(plan, items, machines, now);
-    evaluate(plan, items, machines);
+    merge_batches(plan, plan.conflicts, items, machines, now);
 
     std::map<Id, std::optional<TimePoint>> ready;
     for (const PlanItem& item : items) {

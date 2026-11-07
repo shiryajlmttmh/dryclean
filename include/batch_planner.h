@@ -45,6 +45,10 @@ private:
                                    const std::map<Id, TimePoint>& available) const;
     void reschedule(Plan& plan, const std::vector<PlanItem>& items, const std::vector<Machine>& machines,
                     TimePoint now) const;
+    static bool mergeable(const PlannedBatch& first, const PlannedBatch& second, const ConflictGraph& graph,
+                          const Machine& machine);
+    void merge_batches(Plan& plan, const ConflictGraph& graph, const std::vector<PlanItem>& items,
+                       const std::vector<Machine>& machines, TimePoint now) const;
     void evaluate(Plan& plan, const std::vector<PlanItem>& items, const std::vector<Machine>& machines) const;
 
     std::vector<std::unique_ptr<CompatibilityRule>> rules_;
