@@ -29,6 +29,7 @@ add_library(core STATIC
     src/batch.cpp
     src/storage.cpp
     src/rules.cpp
+    src/batch_planner.cpp
 )
 target_include_directories(core PUBLIC include)
 
