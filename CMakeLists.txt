@@ -27,6 +27,7 @@ add_library(core STATIC
     src/status_record.cpp
     src/order.cpp
     src/batch.cpp
+    src/storage.cpp
 )
 target_include_directories(core PUBLIC include)
 
