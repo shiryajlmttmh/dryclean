@@ -18,6 +18,7 @@ public:
     const std::filesystem::path& root() const noexcept;
     std::optional<Generation> current_generation() const;
     std::filesystem::path generation_path(Generation generation) const;
+    bool has_data() const;
 
     Generation begin_generation();
     void commit_generation(Generation generation);

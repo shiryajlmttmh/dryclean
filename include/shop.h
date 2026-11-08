@@ -11,6 +11,7 @@
 #include "entity_names.h"
 #include "repository.h"
 #include "services.h"
+#include "storage.h"
 #include "types.h"
 
 struct OrderDraft {
@@ -81,6 +82,9 @@ public:
     std::vector<Id> confirm_plan(const Plan& plan, Id acting_employee, TimePoint now);
     void complete_batch(Id batch_id, Id acting_employee, TimePoint now);
 
+    void save_all();
+    void load_all();
+
     Id add_material(Material material, Id acting_employee);
     void update_material(const Material& material, Id acting_employee);
     void restock_material(Id material_id, double amount, Id acting_employee);
@@ -96,6 +100,12 @@ private:
     bool has_scheduled_batch(Id machine_id) const;
     OrderQuote make_quote(const OrderDraft& draft, const Client& client, TimePoint now) const;
     std::vector<PlannedBatch> verified_batches(const Plan& plan, TimePoint now) const;
+    void check_references(const Repository<Client>& clients, const Repository<Item>& items,
+                          const Repository<Order>& orders, const Repository<Batch>& batches,
+                          const Repository<Material>& materials, const Repository<Employee>& employees,
+                          const Repository<Machine>& machines) const;
+    void validate_references() const;
+    void ensure_storage();
     bool all_batches_completed(const Order& order, TimePoint& latest_completion) const;
 
     Repository<Client> clients_;
@@ -108,6 +118,8 @@ private:
     std::map<ServiceType, std::unique_ptr<Service>> services_;
     BatchPlanner planner_;
     std::filesystem::path data_dir_;
+    std::unique_ptr<Storage> storage_;
     Revision revision_ = 0;
     bool dirty_ = false;
+    bool loaded_ = false;
 };

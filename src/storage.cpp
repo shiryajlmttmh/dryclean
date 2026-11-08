@@ -141,6 +141,16 @@ const fs::path& Storage::root() const noexcept { return root_; }
 
 fs::path Storage::generation_path(Generation generation) const { return root_ / generation_name(generation); }
 
+bool Storage::has_data() const {
+    std::error_code ec;
+    for (fs::directory_iterator it(root_, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->path().filename().string() != kLockName) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<Generation> Storage::current_generation() const {
     const fs::path path = root_ / kCurrentName;
     std::error_code ec;
@@ -182,8 +192,11 @@ void Storage::remove_uncommitted() {
     std::error_code ec;
     fs::remove(root_ / kCurrentTempName, ec);
     const std::optional<Generation> current = current_generation();
+    if (!current) {
+        return;
+    }
     for (const Generation generation : list_generations(root_)) {
-        if (!current || generation > *current) {
+        if (generation > *current) {
             fs::remove_all(generation_path(generation), ec);
         }
     }

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <fstream>
+#include <sstream>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -23,6 +25,42 @@ TimePoint deadline_for(TimePoint start, Hours nominal_hours) {
 }
 
 constexpr auto kPlanningDelay = std::chrono::minutes(1);
+
+constexpr double kWeightTolerance = 1e-6;
+constexpr const char* kManifestName = "manifest.txt";
+constexpr const char* kManifestType = "manifest";
+constexpr const char* kFileExtension = ".txt";
+constexpr std::size_t kFileCount = 7;
+
+[[noreturn]] void reference_error(const std::string& message) { throw FileFormatException("", 0, message); }
+
+template <class T>
+std::string file_name_for() {
+    return std::string(EntityName<T>::value) + kFileExtension;
+}
+
+template <class T>
+void save_file(const Repository<T>& repository, const std::filesystem::path& directory) {
+    repository.save(directory / file_name_for<T>());
+}
+
+template <class T>
+void load_file(Repository<T>& repository, const std::filesystem::path& directory,
+               const std::map<std::string, std::size_t>& counts) {
+    const std::string name = file_name_for<T>();
+    std::error_code ec;
+    if (!std::filesystem::exists(directory / name, ec)) {
+        throw FileFormatException(name, 0, "файл снимка отсутствует");
+    }
+    const auto expected = counts.find(name);
+    if (expected == counts.end()) {
+        throw FileFormatException(kManifestName, 0, "в манифесте нет файла " + name);
+    }
+    repository.load(directory / name);
+    if (repository.size() != expected->second) {
+        throw FileFormatException(name, 0, "число записей не совпадает с манифестом");
+    }
+}
 
 constexpr const char* kInitialAdminName = "Администратор";
 constexpr const char* kInitialAdminLogin = "admin";
@@ -102,6 +140,12 @@ void DryCleaningShop::create_initial_data() {
     fresh.add(Employee(kInitialAdminName, kInitialAdminLogin, EmployeeRole::Administrator));
     employees_.swap(fresh);
     dirty_ = true;
+}
+
+void DryCleaningShop::ensure_storage() {
+    if (!storage_) {
+        storage_ = std::make_unique<Storage>(data_dir_);
+    }
 }
 
 std::size_t DryCleaningShop::administrators_count() const {
@@ -758,4 +802,335 @@ void DryCleaningShop::complete_batch(Id batch_id, Id acting_employee, TimePoint 
     replace_by_id(batches, updated);
     batches_.swap(batches);
     publish();
+}
+
+void DryCleaningShop::validate_references() const {
+    check_references(clients_, items_, orders_, batches_, materials_, employees_, machines_);
+}
+
+void DryCleaningShop::check_references(const Repository<Client>& clients, const Repository<Item>& items,
+                                       const Repository<Order>& orders, const Repository<Batch>& batches,
+                                       const Repository<Material>& materials,
+                                       const Repository<Employee>& employees,
+                                       const Repository<Machine>& machines) const {
+    std::set<std::string> logins;
+    for (const Employee& employee : employees) {
+        if (!logins.insert(employee.login()).second) {
+            reference_error("повторяющийся логин сотрудника");
+        }
+    }
+    for (const Material& material : materials) {
+        material.validate();
+    }
+
+    std::set<std::string> phones;
+    for (const Client& client : clients) {
+        if (!phones.insert(client.phone()).second) {
+            reference_error("повторяющийся телефон клиента");
+        }
+        for (const Id order_id : client.order_ids()) {
+            const Order* order = orders.find_by_id(order_id);
+            if (order == nullptr || order->client_id() != client.id()) {
+                reference_error("заказ клиента отсутствует или принадлежит другому клиенту");
+            }
+        }
+    }
+
+    std::set<std::string> tags;
+    for (const Order& order : orders) {
+        const Client* client = clients.find_by_id(order.client_id());
+        if (client == nullptr) {
+            reference_error("заказ ссылается на несуществующего клиента");
+        }
+        const auto& client_orders = client->order_ids();
+        if (std::find(client_orders.begin(), client_orders.end(), order.id()) == client_orders.end()) {
+            reference_error("заказ не указан в списке заказов клиента");
+        }
+        if (!employees.contains(order.employee_id())) {
+            reference_error("заказ ссылается на несуществующего сотрудника");
+        }
+        for (const StatusRecord& record : order.history()) {
+            if (!employees.contains(record.employee_id())) {
+                reference_error("журнал заказа ссылается на несуществующего сотрудника");
+            }
+        }
+        std::size_t batched = 0;
+        bool all_completed = true;
+        TimePoint latest_completion{};
+        std::size_t position = 0;
+        for (const Id item_id : order.item_ids()) {
+            ++position;
+            const Item* item = items.find_by_id(item_id);
+            if (item == nullptr || item->order_id() != order.id()) {
+                reference_error("изделие заказа отсутствует или принадлежит другому заказу");
+            }
+            if (item->tag() != Item::make_tag(order.id(), position)) {
+                reference_error("метка изделия не соответствует заказу и номеру");
+            }
+            if (!tags.insert(item->tag()).second) {
+                reference_error("повторяющаяся метка изделия");
+            }
+            if (!item->is_batched()) {
+                all_completed = false;
+                continue;
+            }
+            ++batched;
+            const Batch* batch = batches.find_by_id(item->batch_id());
+            if (batch == nullptr || !batch->contains_item(item->id())) {
+                reference_error("партия изделия отсутствует или не содержит изделие");
+            }
+            if (batch->status() != BatchStatus::Completed || !batch->completed_at()) {
+                all_completed = false;
+            } else {
+                latest_completion = std::max(latest_completion, *batch->completed_at());
+            }
+        }
+        const OrderStatus status = order.status();
+        if (status == OrderStatus::Accepted && batched != 0) {
+            reference_error("у принятого заказа не должно быть изделий в партиях");
+        }
+        if (status != OrderStatus::Accepted && batched == 0) {
+            reference_error("у заказа в работе нет изделий в партиях");
+        }
+        if ((status == OrderStatus::Ready || status == OrderStatus::Issued) && !all_completed) {
+            reference_error("готовый или выданный заказ содержит незавершённые партии");
+        }
+        if (order.actual_ready_at() && *order.actual_ready_at() < latest_completion) {
+            reference_error("время готовности заказа раньше завершения партий");
+        }
+    }
+
+    for (const Item& item : items) {
+        const Order* order = orders.find_by_id(item.order_id());
+        if (order == nullptr || !order->contains_item(item.id())) {
+            reference_error("изделие не входит в свой заказ");
+        }
+        if (item.is_batched()) {
+            const Batch* batch = batches.find_by_id(item.batch_id());
+            if (batch == nullptr || !batch->contains_item(item.id())) {
+                reference_error("изделие ссылается на партию, которая его не содержит");
+            }
+        }
+    }
+
+    std::map<Id, std::vector<std::pair<TimePoint, TimePoint>>> queues;
+    std::map<Id, TimePoint> machine_latest;
+    for (const Batch& batch : batches) {
+        const Machine* machine = machines.find_by_id(batch.machine_id());
+        if (machine == nullptr) {
+            reference_error("партия ссылается на несуществующую машину");
+        }
+        if (!employees.contains(batch.created_by()) ||
+            (batch.completed_by() && !employees.contains(*batch.completed_by()))) {
+            reference_error("партия ссылается на несуществующего сотрудника");
+        }
+        if (!machine->can_process(batch.service_type())) {
+            reference_error("машина партии не подходит для её услуги");
+        }
+        double weight = 0.0;
+        Hours longest = 0.0;
+        for (const Id item_id : batch.item_ids()) {
+            const Item* item = items.find_by_id(item_id);
+            if (item == nullptr || item->batch_id() != batch.id()) {
+                reference_error("изделие партии отсутствует или указывает на другую партию");
+            }
+            const Order& order = orders.get(item->order_id());
+            if (order.service_type() != batch.service_type()) {
+                reference_error("услуга заказа не совпадает с услугой партии");
+            }
+            weight += item->weight_kg();
+            longest = std::max(longest, service(order.service_type()).calculate_duration(*item, order.is_urgent()));
+        }
+        if (std::abs(weight - batch.total_weight_kg()) > kWeightTolerance) {
+            reference_error("масса партии не совпадает с массой изделий");
+        }
+        if (weight > machine->capacity_kg() + EPS) {
+            reference_error("масса партии превышает вместимость машины");
+        }
+        if (std::abs(batch.fill_ratio() - BatchPlanner::fill_ratio(weight, machine->capacity_kg())) >
+            kWeightTolerance) {
+            reference_error("заполнение партии не совпадает с расчётным");
+        }
+        if (batch.planned_ready_at() != add_hours(batch.planned_start_at(), longest)) {
+            reference_error("время окончания партии не совпадает с длительностью изделий");
+        }
+        if (batch.completed_at() && *batch.completed_at() < batch.planned_ready_at()) {
+            reference_error("партия завершена раньше планового окончания");
+        }
+        queues[batch.machine_id()].emplace_back(batch.planned_start_at(), batch.planned_ready_at());
+        TimePoint& latest = machine_latest[batch.machine_id()];
+        latest = std::max(latest, batch.planned_ready_at());
+    }
+    for (auto& queue : queues) {
+        std::sort(queue.second.begin(), queue.second.end());
+        for (std::size_t i = 1; i < queue.second.size(); ++i) {
+            if (queue.second[i].first < queue.second[i - 1].second) {
+                reference_error("партии одной машины пересекаются по времени");
+            }
+        }
+    }
+    for (const Machine& machine : machines) {
+        const auto latest = machine_latest.find(machine.id());
+        if (latest != machine_latest.end() && machine.free_at() < latest->second) {
+            reference_error("машина освобождается раньше окончания своих партий");
+        }
+    }
+}
+
+void DryCleaningShop::save_all() {
+    if (!loaded_) {
+        throw InvalidInputException("state", "данные не загружены, сохранение невозможно");
+    }
+    validate_references();
+    ensure_storage();
+    const Generation generation = storage_->begin_generation();
+    const std::filesystem::path directory = storage_->generation_path(generation);
+    try {
+        save_file(clients_, directory);
+        save_file(items_, directory);
+        save_file(orders_, directory);
+        save_file(batches_, directory);
+        save_file(materials_, directory);
+        save_file(employees_, directory);
+        save_file(machines_, directory);
+
+        const std::filesystem::path manifest_path = directory / kManifestName;
+        std::ofstream out(manifest_path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            throw StorageException(manifest_path, "не удалось открыть файл для записи");
+        }
+        out.imbue(std::locale::classic());
+        const auto line = [&out](const std::string& name, std::size_t count) {
+            RecordWriter writer;
+            writer.put_token(name);
+            writer.put_count(count);
+            out << writer.str() << '\n';
+        };
+        RecordWriter header;
+        header.put_token(kFormatMagic);
+        header.put_count(kFormatVersion);
+        header.put_token(kManifestType);
+        header.put_count(static_cast<std::size_t>(revision_));
+        header.put_count(kFileCount);
+        out << header.str() << '\n';
+        line(file_name_for<Client>(), clients_.size());
+        line(file_name_for<Item>(), items_.size());
+        line(file_name_for<Order>(), orders_.size());
+        line(file_name_for<Batch>(), batches_.size());
+        line(file_name_for<Material>(), materials_.size());
+        line(file_name_for<Employee>(), employees_.size());
+        line(file_name_for<Machine>(), machines_.size());
+        out.flush();
+        if (!out) {
+            throw StorageException(manifest_path, "ошибка записи в файл");
+        }
+        out.close();
+        if (out.fail()) {
+            throw StorageException(manifest_path, "не удалось закрыть файл после записи");
+        }
+        storage_->commit_generation(generation);
+    } catch (...) {
+        storage_->abort_generation(generation);
+        throw;
+    }
+    dirty_ = false;
+}
+
+void DryCleaningShop::load_all() {
+    if (dirty_) {
+        throw InvalidInputException("state", "есть несохранённые изменения, загрузка запрещена");
+    }
+    ensure_storage();
+    const std::optional<Generation> current = storage_->current_generation();
+
+    Repository<Client> clients;
+    Repository<Item> items;
+    Repository<Order> orders;
+    Repository<Batch> batches;
+    Repository<Material> materials;
+    Repository<Employee> employees;
+    Repository<Machine> machines;
+    Revision stored_revision = 0;
+    bool fresh = false;
+
+    if (!current) {
+        if (storage_->has_data()) {
+            throw FileFormatException("CURRENT", 0, "указатель CURRENT отсутствует, но в каталоге есть данные");
+        }
+        employees.add(Employee(kInitialAdminName, kInitialAdminLogin, EmployeeRole::Administrator));
+        fresh = true;
+    } else {
+        const std::filesystem::path directory = storage_->generation_path(*current);
+        std::map<std::string, std::size_t> counts;
+        {
+            std::ifstream in(directory / kManifestName, std::ios::binary);
+            if (!in) {
+                throw FileFormatException(kManifestName, 0, "файл манифеста отсутствует");
+            }
+            std::string text;
+            std::size_t line_number = 0;
+            try {
+                ++line_number;
+                if (!std::getline(in, text)) {
+                    throw InvalidInputException("manifest", "манифест пуст");
+                }
+                RecordReader header(text);
+                if (header.get_token() != kFormatMagic || header.get_count() != kFormatVersion ||
+                    header.get_token() != kManifestType) {
+                    throw InvalidInputException("manifest", "неизвестный формат манифеста");
+                }
+                stored_revision = header.get_count(std::numeric_limits<std::size_t>::max());
+                const std::size_t declared = header.get_count();
+                header.finish();
+                if (declared != kFileCount) {
+                    throw InvalidInputException("manifest", "неверное число файлов в манифесте");
+                }
+                for (std::size_t i = 0; i < declared; ++i) {
+                    ++line_number;
+                    if (!std::getline(in, text)) {
+                        throw InvalidInputException("manifest", "манифест оборван");
+                    }
+                    RecordReader reader(text);
+                    const std::string name = reader.get_token();
+                    const std::size_t count = reader.get_count(kMaxRecords);
+                    reader.finish();
+                    if (!counts.emplace(name, count).second) {
+                        throw InvalidInputException("manifest", "файл указан в манифесте дважды");
+                    }
+                }
+                while (std::getline(in, text)) {
+                    if (text.find_first_not_of(" \t\r\n") != std::string::npos) {
+                        ++line_number;
+                        throw InvalidInputException("manifest", "после последней записи есть лишние данные");
+                    }
+                }
+            } catch (const InvalidInputException& error) {
+                throw FileFormatException(kManifestName, line_number, error.what());
+            }
+        }
+        load_file(clients, directory, counts);
+        load_file(items, directory, counts);
+        load_file(orders, directory, counts);
+        load_file(batches, directory, counts);
+        load_file(materials, directory, counts);
+        load_file(employees, directory, counts);
+        load_file(machines, directory, counts);
+    }
+
+    check_references(clients, items, orders, batches, materials, employees, machines);
+
+    const Revision base = std::max(revision_, stored_revision);
+    if (loaded_ && base == std::numeric_limits<Revision>::max()) {
+        throw InvalidInputException("revision", "исчерпан счётчик изменений");
+    }
+    clients_.swap(clients);
+    items_.swap(items);
+    orders_.swap(orders);
+    batches_.swap(batches);
+    materials_.swap(materials);
+    employees_.swap(employees);
+    machines_.swap(machines);
+    revision_ = loaded_ ? base + 1 : base;
+    dirty_ = fresh;
+    loaded_ = true;
 }
