@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <utility>
 
 #include "exceptions.h"
@@ -20,6 +21,8 @@ constexpr Hours kHoursPerDay = 24.0;
 TimePoint deadline_for(TimePoint start, Hours nominal_hours) {
     return add_hours(start, kHoursPerDay * std::ceil(nominal_hours / kHoursPerDay));
 }
+
+constexpr auto kPlanningDelay = std::chrono::minutes(1);
 
 constexpr const char* kInitialAdminName = "Администратор";
 constexpr const char* kInitialAdminLogin = "admin";
@@ -528,5 +531,231 @@ void DryCleaningShop::issue_order(Id order_id, Id acting_employee, TimePoint now
     Repository<Order> orders = orders_;
     replace_by_id(orders, changed);
     orders_.swap(orders);
+    publish();
+}
+
+std::vector<PlanItem> DryCleaningShop::collect_plan_items(TimePoint now) const {
+    std::vector<PlanItem> result;
+    for (const Item& item : items_) {
+        if (item.is_batched()) {
+            continue;
+        }
+        const Order* order = orders_.find_by_id(item.order_id());
+        if (order == nullptr || (order->status() != OrderStatus::Accepted && order->status() != OrderStatus::InProgress)) {
+            continue;
+        }
+        PlanItem plan_item;
+        plan_item.item_id = item.id();
+        plan_item.order_id = order->id();
+        plan_item.service_type = order->service_type();
+        plan_item.fabric_group = item.fabric_group();
+        plan_item.color_group = item.color_group();
+        plan_item.weight_kg = item.weight_kg();
+        plan_item.duration = service(order->service_type()).calculate_duration(item, order->is_urgent());
+        plan_item.deadline = order->deadline();
+        plan_item.priority = planner_.compute_priority(plan_item, now);
+        result.push_back(plan_item);
+    }
+    return result;
+}
+
+Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
+    require_permission(acting_employee, Permission::BuildPlan);
+    const std::vector<Machine> machines = machines_.find_if([](const Machine&) { return true; });
+    const std::vector<Material> materials = materials_.find_if([](const Material&) { return true; });
+    Plan plan = planner_.build_plan(collect_plan_items(now), machines, materials, now, revision_);
+    for (auto& entry : plan.order_ready_at) {
+        if (!entry.second) {
+            continue;
+        }
+        for (const Id item_id : orders_.get(entry.first).item_ids()) {
+            const Item& item = items_.get(item_id);
+            if (item.is_batched()) {
+                entry.second = std::max(*entry.second, batches_.get(item.batch_id()).planned_ready_at());
+            }
+        }
+    }
+    return plan;
+}
+
+std::vector<PlannedBatch> DryCleaningShop::verified_batches(const Plan& plan, TimePoint now) const {
+    if (plan.source_revision != revision_) {
+        throw PlanningException("план устарел: данные изменились после его построения");
+    }
+    const std::vector<PlanItem> candidates = collect_plan_items(now);
+    std::map<Id, const PlanItem*> by_id;
+    for (const PlanItem& candidate : candidates) {
+        by_id[candidate.item_id] = &candidate;
+    }
+    std::set<Id> seen;
+    const auto claim = [&](Id id) {
+        if (by_id.find(id) == by_id.end()) {
+            throw PlanningException("изделие не может быть запланировано", id);
+        }
+        if (!seen.insert(id).second) {
+            throw PlanningException("изделие встречается в плане более одного раза", id);
+        }
+    };
+    for (const auto& entry : plan.unplaced) {
+        claim(entry.first);
+    }
+
+    std::vector<PlannedBatch> result;
+    std::vector<Hours> durations;
+    std::map<Id, double> needed;
+    for (const PlannedBatch& source : plan.batches) {
+        if (source.item_ids.empty()) {
+            throw PlanningException("в плане есть пустая партия");
+        }
+        const Machine* machine = machines_.find_by_id(source.machine_id);
+        if (machine == nullptr) {
+            throw PlanningException("в плане указана несуществующая машина");
+        }
+        std::vector<PlanItem> members;
+        double weight = 0.0;
+        Hours longest = 0.0;
+        for (const Id id : source.item_ids) {
+            claim(id);
+            const PlanItem& member = *by_id.at(id);
+            if (member.service_type != source.service_type || !machine->can_process(source.service_type)) {
+                throw PlanningException("услуга изделия не совпадает с услугой партии или машины", id);
+            }
+            members.push_back(member);
+            weight += member.weight_kg;
+            longest = std::max(longest, member.duration);
+        }
+        const ConflictGraph graph = planner_.build_conflict_graph(members);
+        for (const auto& node : graph) {
+            if (!node.second.empty()) {
+                throw PlanningException("в партии оказались несовместимые изделия: " + node.second.begin()->second.front(),
+                                        node.first);
+            }
+        }
+        if (weight > machine->capacity_kg() + EPS) {
+            throw PlanningException("масса партии превышает вместимость машины");
+        }
+        for (const PlanItem& member : members) {
+            bool has_norm = false;
+            for (const Material& material : materials_) {
+                if (material.is_used_for(member.service_type) && material.consumption_per_kg() > 0.0) {
+                    has_norm = true;
+                    needed[material.id()] += material.required_for(member.weight_kg);
+                }
+            }
+            if (!has_norm) {
+                throw PlanningException("для услуги не заданы нормы расхода материалов", member.item_id);
+            }
+        }
+        PlannedBatch checked;
+        checked.item_ids = source.item_ids;
+        checked.machine_id = source.machine_id;
+        checked.service_type = source.service_type;
+        checked.total_weight_kg = weight;
+        checked.fill_ratio = BatchPlanner::fill_ratio(weight, machine->capacity_kg());
+        result.push_back(std::move(checked));
+        durations.push_back(longest);
+    }
+    if (seen.size() != candidates.size()) {
+        throw PlanningException("план не охватывает все изделия, ожидающие обработки");
+    }
+    for (const auto& entry : needed) {
+        const Material& material = materials_.get(entry.first);
+        if (entry.second > material.stock() + EPS) {
+            throw OutOfStockException(material.name(), entry.second, material.stock());
+        }
+    }
+
+    std::map<Id, TimePoint> cursor;
+    for (const Machine& machine : machines_) {
+        cursor[machine.id()] = std::max(now + kPlanningDelay, machine.free_at());
+    }
+    for (std::size_t i = 0; i < result.size(); ++i) {
+        TimePoint& slot = cursor[result[i].machine_id];
+        result[i].planned_start_at = slot;
+        result[i].planned_ready_at = add_hours(slot, durations[i]);
+        slot = result[i].planned_ready_at;
+        if (result[i].planned_start_at != plan.batches[i].planned_start_at ||
+            result[i].planned_ready_at != plan.batches[i].planned_ready_at) {
+            throw PlanningException("расписание плана устарело, перестройте план");
+        }
+    }
+    return result;
+}
+
+void DryCleaningShop::validate_plan(const Plan& plan, TimePoint now) const {
+    verified_batches(plan, now);
+}
+
+std::vector<Id> DryCleaningShop::confirm_plan(const Plan& plan, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::ConfirmPlan);
+    if (plan.batches.empty()) {
+        throw PlanningException("в плане нет партий для подтверждения");
+    }
+    const std::vector<PlannedBatch> verified = verified_batches(plan, now);
+
+    Repository<Batch> batches = batches_;
+    Repository<Item> items = items_;
+    Repository<Machine> machines = machines_;
+    Repository<Material> materials = materials_;
+    Repository<Order> orders = orders_;
+
+    std::vector<Id> created;
+    std::set<Id> touched_orders;
+    std::map<Id, double> consumption;
+    for (const PlannedBatch& planned : verified) {
+        Batch batch(planned.item_ids, planned.machine_id, planned.service_type, planned.total_weight_kg,
+                    planned.fill_ratio, planned.planned_start_at, planned.planned_ready_at, acting_employee);
+        const Id batch_id = batches.add(std::move(batch));
+        created.push_back(batch_id);
+        for (const Id item_id : planned.item_ids) {
+            Item& item = items.get(item_id);
+            item.set_batch_id(batch_id);
+            touched_orders.insert(item.order_id());
+            for (const Material& material : materials_) {
+                if (material.is_used_for(planned.service_type) && material.consumption_per_kg() > 0.0) {
+                    consumption[material.id()] += material.required_for(item.weight_kg());
+                }
+            }
+        }
+        machines.get(planned.machine_id).occupy_until(planned.planned_ready_at);
+    }
+    for (const auto& entry : consumption) {
+        materials.get(entry.first).write_off(entry.second);
+    }
+    for (const Id order_id : touched_orders) {
+        Order& order = orders.get(order_id);
+        if (order.status() == OrderStatus::Accepted) {
+            order.change_status(OrderStatus::InProgress, acting_employee, now);
+        }
+        std::optional<TimePoint> ready = TimePoint{};
+        for (const Id item_id : order.item_ids()) {
+            const Item& item = items.get(item_id);
+            if (!item.is_batched()) {
+                ready = std::nullopt;
+                break;
+            }
+            ready = std::max(*ready, batches.get(item.batch_id()).planned_ready_at());
+        }
+        order.set_planned_ready_at(ready);
+        order.validate();
+    }
+
+    batches_.swap(batches);
+    items_.swap(items);
+    machines_.swap(machines);
+    materials_.swap(materials);
+    orders_.swap(orders);
+    publish();
+    return created;
+}
+
+void DryCleaningShop::complete_batch(Id batch_id, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::ChangeStatus);
+    Batch updated = batches_.get(batch_id);
+    updated.complete(acting_employee, now);
+    updated.validate();
+    Repository<Batch> batches = batches_;
+    replace_by_id(batches, updated);
+    batches_.swap(batches);
     publish();
 }

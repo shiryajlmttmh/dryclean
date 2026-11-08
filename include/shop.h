@@ -75,6 +75,12 @@ public:
     void change_order_status(Id order_id, OrderStatus status, Id acting_employee, TimePoint now);
     void issue_order(Id order_id, Id acting_employee, TimePoint now);
 
+    std::vector<PlanItem> collect_plan_items(TimePoint now) const;
+    Plan build_plan(TimePoint now, Id acting_employee) const;
+    void validate_plan(const Plan& plan, TimePoint now) const;
+    std::vector<Id> confirm_plan(const Plan& plan, Id acting_employee, TimePoint now);
+    void complete_batch(Id batch_id, Id acting_employee, TimePoint now);
+
     Id add_material(Material material, Id acting_employee);
     void update_material(const Material& material, Id acting_employee);
     void restock_material(Id material_id, double amount, Id acting_employee);
@@ -89,6 +95,7 @@ private:
     std::size_t administrators_count() const;
     bool has_scheduled_batch(Id machine_id) const;
     OrderQuote make_quote(const OrderDraft& draft, const Client& client, TimePoint now) const;
+    std::vector<PlannedBatch> verified_batches(const Plan& plan, TimePoint now) const;
     bool all_batches_completed(const Order& order, TimePoint& latest_completion) const;
 
     Repository<Client> clients_;
