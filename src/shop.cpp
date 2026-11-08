@@ -2,16 +2,24 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <utility>
 
 #include "exceptions.h"
 #include "normalize.h"
+#include "record_io.h"
 
 namespace {
 
 constexpr std::array<ServiceType, 4> kAllServices{ServiceType::DryCleaning, ServiceType::WetCleaning,
                                                   ServiceType::StainRemoval, ServiceType::Leather};
+
+constexpr Hours kHoursPerDay = 24.0;
+
+TimePoint deadline_for(TimePoint start, Hours nominal_hours) {
+    return add_hours(start, kHoursPerDay * std::ceil(nominal_hours / kHoursPerDay));
+}
 
 constexpr const char* kInitialAdminName = "Администратор";
 constexpr const char* kInitialAdminLogin = "admin";
@@ -309,4 +317,216 @@ std::vector<Material> DryCleaningShop::materials_sorted_by_stock() const {
         return left.id() < right.id();
     });
     return result;
+}
+
+OrderQuote DryCleaningShop::make_quote(const OrderDraft& draft, const Client& client, TimePoint now) const {
+    if (draft.items.empty()) {
+        throw InvalidInputException("items", "заказ не может быть пустым");
+    }
+    if (draft.items.size() > kMaxNestedElements) {
+        throw InvalidInputException("items", "слишком много изделий в заказе");
+    }
+    const Service& selected = service(draft.service_type);
+    OrderQuote quote;
+    for (const Item& item : draft.items) {
+        if (item.id() != 0 || item.order_id() != 0 || item.batch_id() != 0 || !item.tag().empty()) {
+            throw InvalidInputException("items", "изделие черновика не должно иметь служебных полей");
+        }
+        item.validate();
+        if (!selected.is_applicable(item)) {
+            throw InvalidInputException("items", "изделие не подходит для выбранной услуги");
+        }
+        quote.item_costs.push_back(selected.calculate_cost(item, draft.urgent, client.discount()));
+        quote.item_durations.push_back(selected.calculate_duration(item, draft.urgent));
+    }
+    double total = 0.0;
+    for (const double cost : quote.item_costs) {
+        total += cost;
+    }
+    quote.total_cost = Service::round_money(total);
+    quote.nominal_hours = *std::max_element(quote.item_durations.begin(), quote.item_durations.end());
+    quote.deadline = deadline_for(now, quote.nominal_hours);
+    return quote;
+}
+
+OrderQuote DryCleaningShop::quote_order(const OrderDraft& draft, TimePoint now) const {
+    return make_quote(draft, clients_.get(draft.client_id), now);
+}
+
+Id DryCleaningShop::accept_order(const OrderDraft& draft, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::AcceptOrders);
+    const Client& client = clients_.get(draft.client_id);
+    const OrderQuote quote = make_quote(draft, client, now);
+
+    const Id expected_id = orders_.next_id();
+    Repository<Item> items = items_;
+    Repository<Order> orders = orders_;
+    Repository<Client> clients = clients_;
+
+    Order order(draft.client_id, draft.service_type, draft.urgent, acting_employee, now, client.discount());
+    std::size_t index = 0;
+    for (Item item : draft.items) {
+        item.set_order_id(expected_id);
+        item.set_tag(Item::make_tag(expected_id, ++index));
+        order.add_item_id(items.add(std::move(item)));
+    }
+    order.set_deadline(quote.deadline);
+    order.set_total_cost(quote.total_cost);
+    const Id order_id = orders.add(std::move(order));
+    if (order_id != expected_id) {
+        throw InvalidInputException("order_id", "выданный идентификатор заказа не совпал с ожидаемым");
+    }
+    clients.get(draft.client_id).add_order_id(order_id);
+
+    items_.swap(items);
+    orders_.swap(orders);
+    clients_.swap(clients);
+    publish();
+    return order_id;
+}
+
+void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::AcceptOrders);
+    const Item& current = items_.get(item.id());
+    const Order& order = orders_.get(current.order_id());
+    if (item.order_id() != current.order_id() || item.tag() != current.tag() || item.batch_id() != current.batch_id()) {
+        throw InvalidInputException("item", "служебные поля изделия менять нельзя");
+    }
+    const bool any_batched = std::any_of(order.item_ids().begin(), order.item_ids().end(), [this](Id id) {
+        return items_.get(id).is_batched();
+    });
+    if (order.status() != OrderStatus::Accepted || any_batched) {
+        throw InvalidInputException("item", "изделие можно менять, только пока заказ не поставлен в обработку");
+    }
+
+    Item updated = current;
+    updated.set_kind(item.kind());
+    updated.set_material(item.material_name(), item.material_group(), item.fabric_group());
+    updated.set_color(item.color_name(), item.color_group());
+    updated.set_weight_kg(item.weight_kg());
+    updated.set_soil_level(item.soil_level());
+    updated.set_condition_notes(item.condition_notes());
+    while (!updated.defects().empty()) {
+        updated.remove_defect(updated.defects().size() - 1);
+    }
+    for (const Item::Defect& defect : item.defects()) {
+        updated.add_defect(defect);
+    }
+    updated.validate();
+
+    const Service& selected = service(order.service_type());
+    if (!selected.is_applicable(updated)) {
+        throw InvalidInputException("item", "изделие не подходит для услуги заказа");
+    }
+
+    double total = 0.0;
+    Hours nominal = 0.0;
+    for (const Id id : order.item_ids()) {
+        const Item& member = id == updated.id() ? updated : items_.get(id);
+        total += selected.calculate_cost(member, order.is_urgent(), order.discount_snapshot());
+        nominal = std::max(nominal, selected.calculate_duration(member, order.is_urgent()));
+    }
+
+    Order changed = order;
+    changed.set_total_cost(Service::round_money(total));
+    changed.set_deadline(deadline_for(order.created_at(), nominal));
+    changed.set_planned_ready_at(std::nullopt);
+    changed.validate();
+
+    Repository<Item> items = items_;
+    Repository<Order> orders = orders_;
+    replace_by_id(items, updated);
+    replace_by_id(orders, changed);
+    items_.swap(items);
+    orders_.swap(orders);
+    publish();
+}
+
+double DryCleaningShop::calculate_item_cost(Id item_id) const {
+    const Item& item = items_.get(item_id);
+    const Order& order = orders_.get(item.order_id());
+    return service(order.service_type()).calculate_cost(item, order.is_urgent(), order.discount_snapshot());
+}
+
+Hours DryCleaningShop::calculate_item_duration(Id item_id) const {
+    const Item& item = items_.get(item_id);
+    const Order& order = orders_.get(item.order_id());
+    return service(order.service_type()).calculate_duration(item, order.is_urgent());
+}
+
+double DryCleaningShop::calculate_order_cost(Id order_id) const {
+    const Order& order = orders_.get(order_id);
+    double total = 0.0;
+    for (const Id item_id : order.item_ids()) {
+        total += calculate_item_cost(item_id);
+    }
+    return Service::round_money(total);
+}
+
+std::optional<TimePoint> DryCleaningShop::estimate_ready_time(Id order_id) const {
+    return orders_.get(order_id).planned_ready_at();
+}
+
+std::vector<Order> DryCleaningShop::orders_by_status(OrderStatus status) const {
+    return orders_.find_if([status](const Order& order) { return order.status() == status; });
+}
+
+std::vector<Order> DryCleaningShop::find_overdue_orders(TimePoint now) const {
+    return orders_.find_if([now](const Order& order) { return order.is_overdue(now); });
+}
+
+bool DryCleaningShop::all_batches_completed(const Order& order, TimePoint& latest_completion) const {
+    latest_completion = TimePoint{};
+    for (const Id item_id : order.item_ids()) {
+        const Item* item = items_.find_by_id(item_id);
+        if (item == nullptr || !item->is_batched()) {
+            return false;
+        }
+        const Batch* batch = batches_.find_by_id(item->batch_id());
+        if (batch == nullptr || batch->status() != BatchStatus::Completed || !batch->completed_at()) {
+            return false;
+        }
+        latest_completion = std::max(latest_completion, *batch->completed_at());
+    }
+    return true;
+}
+
+void DryCleaningShop::change_order_status(Id order_id, OrderStatus status, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::ChangeStatus);
+    const Order& order = orders_.get(order_id);
+    if (status != OrderStatus::Ready || order.status() != OrderStatus::InProgress) {
+        throw InvalidInputException("status", "вручную можно перевести заказ только из «В обработке» в «Готов»");
+    }
+    TimePoint latest;
+    if (!all_batches_completed(order, latest)) {
+        throw InvalidInputException("status", "не все партии заказа завершены");
+    }
+    if (now < latest) {
+        throw InvalidInputException("now", "время готовности не может быть раньше завершения партий");
+    }
+    Order changed = order;
+    changed.change_status(OrderStatus::Ready, acting_employee, now);
+    changed.validate();
+    Repository<Order> orders = orders_;
+    replace_by_id(orders, changed);
+    orders_.swap(orders);
+    publish();
+}
+
+void DryCleaningShop::issue_order(Id order_id, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::IssueOrders);
+    const Order& order = orders_.get(order_id);
+    if (order.status() != OrderStatus::Ready) {
+        throw InvalidInputException("status", "выдать можно только готовый заказ");
+    }
+    if (order.actual_ready_at() && now < *order.actual_ready_at()) {
+        throw InvalidInputException("now", "время выдачи не может быть раньше готовности");
+    }
+    Order changed = order;
+    changed.change_status(OrderStatus::Issued, acting_employee, now);
+    changed.validate();
+    Repository<Order> orders = orders_;
+    replace_by_id(orders, changed);
+    orders_.swap(orders);
+    publish();
 }

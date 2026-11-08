@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,21 @@
 #include "repository.h"
 #include "services.h"
 #include "types.h"
+
+struct OrderDraft {
+    Id client_id = 0;
+    std::vector<Item> items;
+    ServiceType service_type = ServiceType::DryCleaning;
+    bool urgent = false;
+};
+
+struct OrderQuote {
+    std::vector<double> item_costs;
+    std::vector<Hours> item_durations;
+    double total_cost = 0.0;
+    Hours nominal_hours = 0.0;
+    TimePoint deadline{};
+};
 
 class DryCleaningShop {
 public:
@@ -47,6 +63,18 @@ public:
     std::vector<Client> search_clients(const std::string& query) const;
     std::vector<Order> client_orders(Id client_id) const;
 
+    OrderQuote quote_order(const OrderDraft& draft, TimePoint now) const;
+    Id accept_order(const OrderDraft& draft, Id acting_employee, TimePoint now);
+    void update_item(const Item& item, Id acting_employee);
+    double calculate_item_cost(Id item_id) const;
+    Hours calculate_item_duration(Id item_id) const;
+    double calculate_order_cost(Id order_id) const;
+    std::optional<TimePoint> estimate_ready_time(Id order_id) const;
+    std::vector<Order> orders_by_status(OrderStatus status) const;
+    std::vector<Order> find_overdue_orders(TimePoint now) const;
+    void change_order_status(Id order_id, OrderStatus status, Id acting_employee, TimePoint now);
+    void issue_order(Id order_id, Id acting_employee, TimePoint now);
+
     Id add_material(Material material, Id acting_employee);
     void update_material(const Material& material, Id acting_employee);
     void restock_material(Id material_id, double amount, Id acting_employee);
@@ -60,6 +88,8 @@ private:
     void create_initial_data();
     std::size_t administrators_count() const;
     bool has_scheduled_batch(Id machine_id) const;
+    OrderQuote make_quote(const OrderDraft& draft, const Client& client, TimePoint now) const;
+    bool all_batches_completed(const Order& order, TimePoint& latest_completion) const;
 
     Repository<Client> clients_;
     Repository<Item> items_;
