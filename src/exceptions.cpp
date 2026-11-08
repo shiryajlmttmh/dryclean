@@ -50,3 +50,7 @@ StorageException::StorageException(std::filesystem::path path, std::string messa
 const std::filesystem::path& StorageException::path() const noexcept { return path_; }
 
 std::string StorageException::title() const { return "Ошибка хранилища"; }
+
+IntegrityException::IntegrityException(std::string message) : ShopException(message) {}
+
+std::string IntegrityException::title() const { return "Нарушена целостность данных"; }

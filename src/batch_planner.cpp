@@ -29,6 +29,45 @@ std::map<Id, const PlanItem*> index_items(const std::vector<PlanItem>& items) {
     return result;
 }
 
+std::map<Id, std::optional<TimePoint>> order_ready_times(const Plan& plan, const std::vector<PlanItem>& items) {
+    std::map<Id, Id> order_of;
+    std::map<Id, std::optional<TimePoint>> ready;
+    for (const PlanItem& item : items) {
+        order_of[item.item_id] = item.order_id;
+        ready.emplace(item.order_id, TimePoint{});
+    }
+    for (const PlannedBatch& batch : plan.batches) {
+        for (const Id id : batch.item_ids) {
+            std::optional<TimePoint>& slot = ready[order_of[id]];
+            if (slot) {
+                slot = std::max(*slot, batch.planned_ready_at);
+            }
+        }
+    }
+    for (const auto& entry : plan.unplaced) {
+        ready[order_of[entry.first]] = std::nullopt;
+    }
+    return ready;
+}
+
+std::optional<std::string> machine_shortage(const PlanItem& item, const std::vector<Machine>& machines) {
+    double max_capacity = 0.0;
+    bool has_type = false;
+    for (const Machine& machine : machines) {
+        if (machine.can_process(item.service_type)) {
+            has_type = true;
+            max_capacity = std::max(max_capacity, machine.capacity_kg());
+        }
+    }
+    if (!has_type) {
+        return std::string("нет машины для этой услуги");
+    }
+    if (item.weight_kg > max_capacity + EPS) {
+        return std::string("вес изделия больше вместимости машины");
+    }
+    return std::nullopt;
+}
+
 std::map<Id, TimePoint> machine_availability(const Plan& plan, const std::vector<Machine>& machines,
                                              TimePoint now) {
     std::map<Id, TimePoint> result;
@@ -46,7 +85,7 @@ std::map<Id, TimePoint> machine_availability(const Plan& plan, const std::vector
 std::vector<const Material*> norm_materials(ServiceType service, const std::vector<Material>& materials) {
     std::vector<const Material*> result;
     for (const Material& material : materials) {
-        if (material.is_used_for(service) && material.consumption_per_kg() > 0.0) {
+        if (material.is_used_for(service)) {
             result.push_back(&material);
         }
     }
@@ -317,9 +356,7 @@ void BatchPlanner::merge_batches(Plan& plan, const ConflictGraph& graph, const s
                 trial.batches.erase(trial.batches.begin() + static_cast<std::ptrdiff_t>(j));
                 reschedule(trial, items, machines, now);
                 evaluate(trial, items, machines);
-                const bool improves = trial.objective < plan.objective - EPS ||
-                                      (std::abs(trial.objective - plan.objective) <= EPS &&
-                                       trial.batches.size() < plan.batches.size());
+                const bool improves = trial.objective <= plan.objective + EPS;
                 const bool better_than_best = !best || trial.objective < best->objective - EPS;
                 if (improves && better_than_best) {
                     best = std::move(trial);
@@ -336,89 +373,86 @@ void BatchPlanner::merge_batches(Plan& plan, const ConflictGraph& graph, const s
     }
 }
 
-Plan BatchPlanner::plan_batches(const std::vector<PlanItem>& sorted, const ConflictGraph& graph,
-                                const std::vector<Machine>& machines, const std::vector<Material>& materials,
-                                TimePoint now) const {
+std::optional<std::size_t> BatchPlanner::find_best_batch(const Plan& plan, const PlanItem& item,
+                                                          const Context& context,
+                                                          const std::map<Id, double>& stock_left) const {
+    std::optional<std::size_t> best_index;
+    double best_fill = 0.0;
+    TimePoint best_end{};
+    Id best_machine = 0;
+    for (std::size_t index = 0; index < plan.batches.size(); ++index) {
+        const PlannedBatch& batch = plan.batches[index];
+        const Machine* machine = find_machine(context.machines, batch.machine_id);
+        if (machine == nullptr ||
+            can_add(batch, item, context.graph, *machine, stock_left, context.materials)) {
+            continue;
+        }
+        const double fill = fill_ratio(batch.total_weight_kg + item.weight_kg, machine->capacity_kg());
+        Plan trial;
+        trial.batches = plan.batches;
+        trial.batches[index].item_ids.push_back(item.item_id);
+        reschedule(trial, context.items, context.machines, context.now);
+        const TimePoint end = trial.batches[index].planned_ready_at;
+        const bool tie = std::abs(fill - best_fill) <= EPS;
+        const bool better = !best_index || fill > best_fill + EPS ||
+                            (tie && (end < best_end || (end == best_end && batch.machine_id < best_machine)));
+        if (better) {
+            best_index = index;
+            best_fill = fill;
+            best_end = end;
+            best_machine = batch.machine_id;
+        }
+    }
+    return best_index;
+}
+
+std::optional<std::string> BatchPlanner::open_batch(Plan& plan, const PlanItem& item, const Context& context,
+                                                    const std::map<Id, double>& stock_left) const {
+    if (const auto reason = machine_shortage(item, context.machines)) {
+        return reason;
+    }
+    const auto available = machine_availability(plan, context.machines, context.now);
+    const auto machine_id = pick_machine(item.service_type, item.weight_kg, context.machines, available);
+    if (!machine_id) {
+        return std::string("нет подходящей машины");
+    }
+    PlannedBatch fresh;
+    fresh.machine_id = *machine_id;
+    fresh.service_type = item.service_type;
+    const Machine* machine = find_machine(context.machines, *machine_id);
+    if (const auto reason = can_add(fresh, item, context.graph, *machine, stock_left, context.materials)) {
+        return reason;
+    }
+    fresh.item_ids.push_back(item.item_id);
+    fresh.total_weight_kg = item.weight_kg;
+    plan.batches.push_back(std::move(fresh));
+    return std::nullopt;
+}
+
+std::optional<std::string> BatchPlanner::place_item(Plan& plan, const PlanItem& item, const Context& context,
+                                                    const std::map<Id, double>& stock_left) const {
+    if (const auto index = find_best_batch(plan, item, context, stock_left)) {
+        PlannedBatch& batch = plan.batches[*index];
+        batch.item_ids.push_back(item.item_id);
+        batch.total_weight_kg += item.weight_kg;
+        return std::nullopt;
+    }
+    return open_batch(plan, item, context, stock_left);
+}
+
+Plan BatchPlanner::plan_batches(const Context& context) const {
     Plan plan;
     std::map<Id, double> stock_left;
-    for (const Material& material : materials) {
+    for (const Material& material : context.materials) {
         stock_left[material.id()] = material.stock();
     }
-
-    for (const PlanItem& item : sorted) {
-        std::optional<std::size_t> best_index;
-        double best_fill = 0.0;
-        TimePoint best_end{};
-        Id best_machine = 0;
-
-        for (std::size_t index = 0; index < plan.batches.size(); ++index) {
-            const PlannedBatch& batch = plan.batches[index];
-            const Machine* machine = find_machine(machines, batch.machine_id);
-            if (machine == nullptr || can_add(batch, item, graph, *machine, stock_left, materials)) {
-                continue;
-            }
-            const double fill = fill_ratio(batch.total_weight_kg + item.weight_kg, machine->capacity_kg());
-            Plan trial;
-            trial.batches = plan.batches;
-            trial.batches[index].item_ids.push_back(item.item_id);
-            std::vector<PlanItem> known(sorted);
-            reschedule(trial, known, machines, now);
-            const TimePoint end = trial.batches[index].planned_ready_at;
-            const bool better = !best_index || fill > best_fill + EPS ||
-                                (std::abs(fill - best_fill) <= EPS &&
-                                 (end < best_end || (end == best_end && batch.machine_id < best_machine)));
-            if (better) {
-                best_index = index;
-                best_fill = fill;
-                best_end = end;
-                best_machine = batch.machine_id;
-            }
-        }
-
-        if (best_index) {
-            PlannedBatch& batch = plan.batches[*best_index];
-            batch.item_ids.push_back(item.item_id);
-            batch.total_weight_kg += item.weight_kg;
-            write_off_stock(item, materials, stock_left);
-            reschedule(plan, sorted, machines, now);
-            continue;
-        }
-
-        double max_capacity = 0.0;
-        bool has_type = false;
-        for (const Machine& machine : machines) {
-            if (machine.can_process(item.service_type)) {
-                has_type = true;
-                max_capacity = std::max(max_capacity, machine.capacity_kg());
-            }
-        }
-        if (!has_type) {
-            plan.unplaced.emplace_back(item.item_id, "нет машины для этой услуги");
-            continue;
-        }
-        if (item.weight_kg > max_capacity + EPS) {
-            plan.unplaced.emplace_back(item.item_id, "вес изделия больше вместимости машины");
-            continue;
-        }
-        const auto available = machine_availability(plan, machines, now);
-        const auto machine_id = pick_machine(item.service_type, item.weight_kg, machines, available);
-        if (!machine_id) {
-            plan.unplaced.emplace_back(item.item_id, "нет подходящей машины");
-            continue;
-        }
-        PlannedBatch fresh;
-        fresh.machine_id = *machine_id;
-        fresh.service_type = item.service_type;
-        const Machine* machine = find_machine(machines, *machine_id);
-        if (const auto reason = can_add(fresh, item, graph, *machine, stock_left, materials)) {
+    for (const PlanItem& item : context.items) {
+        if (const auto reason = place_item(plan, item, context, stock_left)) {
             plan.unplaced.emplace_back(item.item_id, *reason);
             continue;
         }
-        fresh.item_ids.push_back(item.item_id);
-        fresh.total_weight_kg = item.weight_kg;
-        plan.batches.push_back(std::move(fresh));
-        write_off_stock(item, materials, stock_left);
-        reschedule(plan, sorted, machines, now);
+        write_off_stock(item, context.materials, stock_left);
+        reschedule(plan, context.items, context.machines, context.now);
     }
     return plan;
 }
@@ -432,33 +466,11 @@ Plan BatchPlanner::build_plan(std::vector<PlanItem> items, const std::vector<Mac
     validate_items(items);
     ConflictGraph graph = build_conflict_graph(items);
     prioritize(items, graph, now);
-    Plan plan = plan_batches(items, graph, machines, materials, now);
+    Plan plan = plan_batches(Context{items, graph, machines, materials, now});
     plan.source_revision = source_revision;
     plan.built_at = now;
     plan.conflicts = std::move(graph);
     merge_batches(plan, plan.conflicts, items, machines, now);
-
-    std::map<Id, std::optional<TimePoint>> ready;
-    for (const PlanItem& item : items) {
-        ready.emplace(item.order_id, std::optional<TimePoint>(TimePoint{}));
-    }
-    std::set<Id> placed;
-    std::map<Id, Id> order_of;
-    for (const PlanItem& item : items) {
-        order_of[item.item_id] = item.order_id;
-    }
-    for (const PlannedBatch& batch : plan.batches) {
-        for (const Id id : batch.item_ids) {
-            placed.insert(id);
-            std::optional<TimePoint>& slot = ready[order_of[id]];
-            if (slot) {
-                slot = std::max(*slot, batch.planned_ready_at);
-            }
-        }
-    }
-    for (const auto& [id, reason] : plan.unplaced) {
-        ready[order_of[id]] = std::nullopt;
-    }
-    plan.order_ready_at = std::move(ready);
+    plan.order_ready_at = order_ready_times(plan, items);
     return plan;
 }

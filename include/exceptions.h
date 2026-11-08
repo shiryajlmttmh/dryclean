@@ -59,6 +59,12 @@ private:
     Id item_id_;
 };
 
+class IntegrityException : public ShopException {
+public:
+    explicit IntegrityException(std::string message);
+    std::string title() const override;
+};
+
 class StorageException : public ShopException {
 public:
     StorageException(std::filesystem::path path, std::string message);

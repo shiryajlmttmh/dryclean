@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -95,15 +96,31 @@ public:
 private:
     void begin_mutation(Id acting_employee, Permission permission) const;
     void publish() noexcept;
-    void create_initial_data();
     std::size_t administrators_count() const;
     bool has_scheduled_batch(Id machine_id) const;
-    OrderQuote make_quote(const OrderDraft& draft, const Client& client, TimePoint now) const;
+    class PlanClaims {
+    public:
+        explicit PlanClaims(const std::vector<PlanItem>& candidates);
+        const PlanItem& claim(Id id);
+        std::size_t count() const noexcept;
+
+    private:
+        std::map<Id, const PlanItem*> by_id_;
+        std::set<Id> seen_;
+    };
+
     std::vector<PlannedBatch> verified_batches(const Plan& plan, TimePoint now) const;
+    PlannedBatch check_planned_batch(const PlannedBatch& source, PlanClaims& claims, std::map<Id, double>& needed,
+                                     Hours& duration) const;
+    void accumulate_material_needs(const PlanItem& member, std::map<Id, double>& needed) const;
+    void check_material_stock(const std::map<Id, double>& needed) const;
+    void check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations, const Plan& plan,
+                        TimePoint now) const;
     void check_references(const Repository<Client>& clients, const Repository<Item>& items,
                           const Repository<Order>& orders, const Repository<Batch>& batches,
-                          const Repository<Material>& materials, const Repository<Employee>& employees,
-                          const Repository<Machine>& machines) const;
+                          const Repository<Employee>& employees, const Repository<Machine>& machines) const;
+    void check_batch(const Batch& batch, const Repository<Item>& items, const Repository<Order>& orders,
+                     const Repository<Machine>& machines, const Repository<Employee>& employees) const;
     void validate_references() const;
     void ensure_storage();
     bool all_batches_completed(const Order& order, TimePoint& latest_completion) const;

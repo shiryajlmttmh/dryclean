@@ -19,6 +19,7 @@ public:
     void put_token(const std::string& token);
     void put_id(Id id);
     void put_count(std::size_t count);
+    void put_revision(Revision revision);
     void put_bool(bool value);
     void put_double(double value);
     void put_string(const std::string& value);
@@ -41,6 +42,7 @@ public:
     std::string get_token();
     Id get_id();
     std::size_t get_count(std::size_t limit = kMaxNestedElements);
+    Revision get_revision();
     bool get_bool();
     double get_double();
     std::string get_string();

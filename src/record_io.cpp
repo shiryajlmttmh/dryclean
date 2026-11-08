@@ -52,6 +52,11 @@ void RecordWriter::put_count(std::size_t count) {
     out_ << count;
 }
 
+void RecordWriter::put_revision(Revision revision) {
+    separate();
+    out_ << revision;
+}
+
 void RecordWriter::put_bool(bool value) {
     separate();
     out_ << (value ? '1' : '0');
@@ -116,6 +121,8 @@ std::size_t RecordReader::get_count(std::size_t limit) {
     }
     return value;
 }
+
+Revision RecordReader::get_revision() { return parse_number<Revision>(get_token()); }
 
 bool RecordReader::get_bool() {
     const std::string token = get_token();

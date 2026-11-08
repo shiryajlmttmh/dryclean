@@ -60,7 +60,7 @@ std::pair<std::vector<T>, Id> load_collection(std::istream& is) {
     std::vector<T> items;
     std::set<Id> seen;
     for (std::size_t i = 0; i < count; ++i) {
-        const std::size_t line = i + 2;
+        const std::size_t line = kFirstRecordLine + i;
         T item;
         if (!(is >> item)) {
             throw FileFormatException("", line, "запись отсутствует или повреждена");
@@ -80,7 +80,7 @@ std::pair<std::vector<T>, Id> load_collection(std::istream& is) {
     std::string rest;
     while (std::getline(is, rest)) {
         if (rest.find_first_not_of(" \t\r\n") != std::string::npos) {
-            throw FileFormatException("", count + 2, "после последней записи есть лишние данные");
+            throw FileFormatException("", kFirstRecordLine + count, "после последней записи есть лишние данные");
         }
     }
     return {std::move(items), next_id};

@@ -11,6 +11,7 @@
 
 constexpr std::size_t kMaxRecords = 100000;
 constexpr std::size_t kFormatVersion = 1;
+constexpr std::size_t kFirstRecordLine = 2;
 inline constexpr const char* kFormatMagic = "DCLEAN";
 
 template <class T, class Pred>

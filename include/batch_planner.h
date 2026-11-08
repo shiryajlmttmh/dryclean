@@ -35,9 +35,21 @@ public:
     static double fill_ratio(double weight, double capacity);
 
 private:
-    Plan plan_batches(const std::vector<PlanItem>& sorted, const ConflictGraph& graph,
-                      const std::vector<Machine>& machines, const std::vector<Material>& materials,
-                      TimePoint now) const;
+    struct Context {
+        const std::vector<PlanItem>& items;
+        const ConflictGraph& graph;
+        const std::vector<Machine>& machines;
+        const std::vector<Material>& materials;
+        TimePoint now;
+    };
+
+    Plan plan_batches(const Context& context) const;
+    std::optional<std::string> place_item(Plan& plan, const PlanItem& item, const Context& context,
+                                          const std::map<Id, double>& stock_left) const;
+    std::optional<std::size_t> find_best_batch(const Plan& plan, const PlanItem& item, const Context& context,
+                                               const std::map<Id, double>& stock_left) const;
+    std::optional<std::string> open_batch(Plan& plan, const PlanItem& item, const Context& context,
+                                          const std::map<Id, double>& stock_left) const;
     std::optional<std::string> can_add(const PlannedBatch& batch, const PlanItem& item, const ConflictGraph& graph,
                                        const Machine& machine, const std::map<Id, double>& stock_left,
                                        const std::vector<Material>& materials) const;

@@ -166,6 +166,12 @@ std::optional<Generation> Storage::current_generation() const {
     while (!text.empty() && (text.back() == '\r' || text.back() == ' ')) {
         text.pop_back();
     }
+    std::string rest;
+    while (std::getline(in, rest)) {
+        if (rest.find_first_not_of(" \t\r\n") != std::string::npos) {
+            throw FileFormatException(kCurrentName, kCurrentLine, "указатель CURRENT содержит лишние данные");
+        }
+    }
     Generation value = 0;
     const char* end = text.data() + text.size();
     const auto result = std::from_chars(text.data(), end, value);
