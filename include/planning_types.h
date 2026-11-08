@@ -13,6 +13,7 @@ struct PlanItem {
     Id item_id = 0;
     Id order_id = 0;
     ServiceType service_type = ServiceType::DryCleaning;
+    MaterialGroup material_group = MaterialGroup::Basic;
     FabricGroup fabric_group = FabricGroup::Dense;
     ColorGroup color_group = ColorGroup::Light;
     double weight_kg = 0.0;

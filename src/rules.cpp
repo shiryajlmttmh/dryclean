@@ -1,8 +1,16 @@
 #include "rules.h"
 
 std::optional<std::string> FabricRule::check(const PlanItem& first, const PlanItem& second) const {
-    if (first.fabric_group == FabricGroup::LeatherFur || second.fabric_group == FabricGroup::LeatherFur) {
-        return std::string("кожа и мех обрабатываются отдельной партией");
+    const bool first_leather = first.fabric_group == FabricGroup::LeatherFur;
+    const bool second_leather = second.fabric_group == FabricGroup::LeatherFur;
+    if (first_leather && second_leather) {
+        if (first.material_group != second.material_group) {
+            return std::string("разные виды кожи и меха обрабатываются отдельными партиями");
+        }
+        return std::nullopt;
+    }
+    if (first_leather || second_leather) {
+        return std::string("кожа и мех обрабатываются отдельно от обычных тканей");
     }
     if (first.fabric_group != second.fabric_group) {
         return std::string("плотные и деликатные ткани нельзя обрабатывать вместе");

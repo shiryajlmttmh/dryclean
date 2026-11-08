@@ -31,13 +31,11 @@ constexpr const char* kManifestType = "manifest";
 constexpr const char* kFileExtension = ".txt";
 constexpr std::size_t kFileCount = 7;
 
-[[noreturn]] void reference_error(const std::string& message) { throw IntegrityException(message); }
-
 void check_employees(const Repository<Employee>& employees) {
     std::set<std::string> logins;
     for (const Employee& employee : employees) {
         if (!logins.insert(employee.login()).second) {
-            reference_error("повторяющийся логин сотрудника");
+            throw IntegrityException("повторяющийся логин сотрудника");
         }
     }
 }
@@ -46,12 +44,12 @@ void check_clients(const Repository<Client>& clients, const Repository<Order>& o
     std::set<std::string> phones;
     for (const Client& client : clients) {
         if (!phones.insert(client.phone()).second) {
-            reference_error("повторяющийся телефон клиента");
+            throw IntegrityException("повторяющийся телефон клиента");
         }
         for (const Id order_id : client.order_ids()) {
             const Order* order = orders.find_by_id(order_id);
             if (order == nullptr || order->client_id() != client.id()) {
-                reference_error("заказ клиента отсутствует или принадлежит другому клиенту");
+                throw IntegrityException("заказ клиента отсутствует или принадлежит другому клиенту");
             }
         }
     }
@@ -71,13 +69,13 @@ OrderProgress check_order_items(const Order& order, const Repository<Item>& item
         ++position;
         const Item* item = items.find_by_id(item_id);
         if (item == nullptr || item->order_id() != order.id()) {
-            reference_error("изделие заказа отсутствует или принадлежит другому заказу");
+            throw IntegrityException("изделие заказа отсутствует или принадлежит другому заказу");
         }
         if (item->tag() != Item::make_tag(order.id(), position)) {
-            reference_error("метка изделия не соответствует заказу и номеру");
+            throw IntegrityException("метка изделия не соответствует заказу и номеру");
         }
         if (!tags.insert(item->tag()).second) {
-            reference_error("повторяющаяся метка изделия");
+            throw IntegrityException("повторяющаяся метка изделия");
         }
         if (!item->is_batched()) {
             progress.all_completed = false;
@@ -86,7 +84,7 @@ OrderProgress check_order_items(const Order& order, const Repository<Item>& item
         ++progress.batched;
         const Batch* batch = batches.find_by_id(item->batch_id());
         if (batch == nullptr || !batch->contains_item(item->id())) {
-            reference_error("партия изделия отсутствует или не содержит изделие");
+            throw IntegrityException("партия изделия отсутствует или не содержит изделие");
         }
         if (batch->status() != BatchStatus::Completed || !batch->completed_at()) {
             progress.all_completed = false;
@@ -100,16 +98,16 @@ OrderProgress check_order_items(const Order& order, const Repository<Item>& item
 void check_order_status(const Order& order, const OrderProgress& progress) {
     const OrderStatus status = order.status();
     if (status == OrderStatus::Accepted && progress.batched != 0) {
-        reference_error("у принятого заказа не должно быть изделий в партиях");
+        throw IntegrityException("у принятого заказа не должно быть изделий в партиях");
     }
     if (status != OrderStatus::Accepted && progress.batched == 0) {
-        reference_error("у заказа в работе нет изделий в партиях");
+        throw IntegrityException("у заказа в работе нет изделий в партиях");
     }
     if ((status == OrderStatus::Ready || status == OrderStatus::Issued) && !progress.all_completed) {
-        reference_error("готовый или выданный заказ содержит незавершённые партии");
+        throw IntegrityException("готовый или выданный заказ содержит незавершённые партии");
     }
     if (order.actual_ready_at() && *order.actual_ready_at() < progress.latest_completion) {
-        reference_error("время готовности заказа раньше завершения партий");
+        throw IntegrityException("время готовности заказа раньше завершения партий");
     }
 }
 
@@ -120,18 +118,18 @@ void check_orders(const Repository<Client>& clients, const Repository<Item>& ite
     for (const Order& order : orders) {
         const Client* client = clients.find_by_id(order.client_id());
         if (client == nullptr) {
-            reference_error("заказ ссылается на несуществующего клиента");
+            throw IntegrityException("заказ ссылается на несуществующего клиента");
         }
         const auto& client_orders = client->order_ids();
         if (std::find(client_orders.begin(), client_orders.end(), order.id()) == client_orders.end()) {
-            reference_error("заказ не указан в списке заказов клиента");
+            throw IntegrityException("заказ не указан в списке заказов клиента");
         }
         if (!employees.contains(order.employee_id())) {
-            reference_error("заказ ссылается на несуществующего сотрудника");
+            throw IntegrityException("заказ ссылается на несуществующего сотрудника");
         }
         for (const StatusRecord& record : order.history()) {
             if (!employees.contains(record.employee_id())) {
-                reference_error("журнал заказа ссылается на несуществующего сотрудника");
+                throw IntegrityException("журнал заказа ссылается на несуществующего сотрудника");
             }
         }
         check_order_status(order, check_order_items(order, items, batches, tags));
@@ -143,14 +141,14 @@ void check_items(const Repository<Item>& items, const Repository<Order>& orders,
     for (const Item& item : items) {
         const Order* order = orders.find_by_id(item.order_id());
         if (order == nullptr || !order->contains_item(item.id())) {
-            reference_error("изделие не входит в свой заказ");
+            throw IntegrityException("изделие не входит в свой заказ");
         }
         if (!item.is_batched()) {
             continue;
         }
         const Batch* batch = batches.find_by_id(item.batch_id());
         if (batch == nullptr || !batch->contains_item(item.id())) {
-            reference_error("изделие ссылается на партию, которая его не содержит");
+            throw IntegrityException("изделие ссылается на партию, которая его не содержит");
         }
     }
 }
@@ -167,14 +165,14 @@ void check_machine_queues(const Repository<Batch>& batches, const Repository<Mac
         std::sort(queue.second.begin(), queue.second.end());
         for (std::size_t i = 1; i < queue.second.size(); ++i) {
             if (queue.second[i].first < queue.second[i - 1].second) {
-                reference_error("партии одной машины пересекаются по времени");
+                throw IntegrityException("партии одной машины пересекаются по времени");
             }
         }
     }
     for (const Machine& machine : machines) {
         const auto found = latest.find(machine.id());
         if (found != latest.end() && machine.free_at() < found->second) {
-            reference_error("машина освобождается раньше окончания своих партий");
+            throw IntegrityException("машина освобождается раньше окончания своих партий");
         }
     }
 }
@@ -826,6 +824,7 @@ std::vector<PlanItem> DryCleaningShop::collect_plan_items(TimePoint now) const {
         plan_item.item_id = item.id();
         plan_item.order_id = order->id();
         plan_item.service_type = order->service_type();
+        plan_item.material_group = item.material_group();
         plan_item.fabric_group = item.fabric_group();
         plan_item.color_group = item.color_group();
         plan_item.weight_kg = item.weight_kg();
@@ -876,15 +875,15 @@ const PlanItem& DryCleaningShop::PlanClaims::claim(Id id) {
 std::size_t DryCleaningShop::PlanClaims::count() const noexcept { return seen_.size(); }
 
 void DryCleaningShop::accumulate_material_needs(const PlanItem& member, std::map<Id, double>& needed) const {
-    bool has_norm = false;
+    bool has_material = false;
     for (const Material& material : materials_) {
         if (material.is_used_for(member.service_type)) {
-            has_norm = true;
+            has_material = true;
             needed[material.id()] += material.required_for(member.weight_kg);
         }
     }
-    if (!has_norm) {
-        throw PlanningException("для услуги не заданы нормы расхода материалов", member.item_id);
+    if (!has_material) {
+        throw PlanningException("для услуги не назначено ни одного расходного материала", member.item_id);
     }
 }
 
@@ -1053,43 +1052,43 @@ void DryCleaningShop::check_batch(const Batch& batch, const Repository<Item>& it
                                   const Repository<Employee>& employees) const {
     const Machine* machine = machines.find_by_id(batch.machine_id());
     if (machine == nullptr) {
-        reference_error("партия ссылается на несуществующую машину");
+        throw IntegrityException("партия ссылается на несуществующую машину");
     }
     if (!employees.contains(batch.created_by()) ||
         (batch.completed_by() && !employees.contains(*batch.completed_by()))) {
-        reference_error("партия ссылается на несуществующего сотрудника");
+        throw IntegrityException("партия ссылается на несуществующего сотрудника");
     }
     if (!machine->can_process(batch.service_type())) {
-        reference_error("машина партии не подходит для её услуги");
+        throw IntegrityException("машина партии не подходит для её услуги");
     }
     double weight = 0.0;
     Hours longest = 0.0;
     for (const Id item_id : batch.item_ids()) {
         const Item* item = items.find_by_id(item_id);
         if (item == nullptr || item->batch_id() != batch.id()) {
-            reference_error("изделие партии отсутствует или указывает на другую партию");
+            throw IntegrityException("изделие партии отсутствует или указывает на другую партию");
         }
         const Order& order = orders.get(item->order_id());
         if (order.service_type() != batch.service_type()) {
-            reference_error("услуга заказа не совпадает с услугой партии");
+            throw IntegrityException("услуга заказа не совпадает с услугой партии");
         }
         weight += item->weight_kg();
         longest = std::max(longest, service(order.service_type()).calculate_duration(*item, order.is_urgent()));
     }
     if (std::abs(weight - batch.total_weight_kg()) > EPS) {
-        reference_error("масса партии не совпадает с массой изделий");
+        throw IntegrityException("масса партии не совпадает с массой изделий");
     }
     if (weight > machine->capacity_kg() + EPS) {
-        reference_error("масса партии превышает вместимость машины");
+        throw IntegrityException("масса партии превышает вместимость машины");
     }
     if (std::abs(batch.fill_ratio() - BatchPlanner::fill_ratio(weight, machine->capacity_kg())) > EPS) {
-        reference_error("заполнение партии не совпадает с расчётным");
+        throw IntegrityException("заполнение партии не совпадает с расчётным");
     }
     if (batch.planned_ready_at() != add_hours(batch.planned_start_at(), longest)) {
-        reference_error("время окончания партии не совпадает с длительностью изделий");
+        throw IntegrityException("время окончания партии не совпадает с длительностью изделий");
     }
     if (batch.completed_at() && *batch.completed_at() < batch.planned_ready_at()) {
-        reference_error("партия завершена раньше планового окончания");
+        throw IntegrityException("партия завершена раньше планового окончания");
     }
 }
 

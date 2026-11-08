@@ -82,7 +82,7 @@ std::map<Id, TimePoint> machine_availability(const Plan& plan, const std::vector
     return result;
 }
 
-std::vector<const Material*> norm_materials(ServiceType service, const std::vector<Material>& materials) {
+std::vector<const Material*> materials_for_service(ServiceType service, const std::vector<Material>& materials) {
     std::vector<const Material*> result;
     for (const Material& material : materials) {
         if (material.is_used_for(service)) {
@@ -94,7 +94,7 @@ std::vector<const Material*> norm_materials(ServiceType service, const std::vect
 
 void write_off_stock(const PlanItem& item, const std::vector<Material>& materials,
                      std::map<Id, double>& stock_left) {
-    for (const Material* material : norm_materials(item.service_type, materials)) {
+    for (const Material* material : materials_for_service(item.service_type, materials)) {
         stock_left[material->id()] -= material->required_for(item.weight_kg);
     }
 }
@@ -225,11 +225,11 @@ std::optional<std::string> BatchPlanner::can_add(const PlannedBatch& batch, cons
     if (batch.total_weight_kg + item.weight_kg > machine.capacity_kg() + EPS) {
         return std::string("превышена вместимость машины");
     }
-    const auto norms = norm_materials(item.service_type, materials);
-    if (norms.empty()) {
-        return std::string("для услуги не заданы нормы расхода материалов");
+    const auto assigned = materials_for_service(item.service_type, materials);
+    if (assigned.empty()) {
+        return std::string("для услуги не назначено ни одного расходного материала");
     }
-    for (const Material* material : norms) {
+    for (const Material* material : assigned) {
         const auto stock = stock_left.find(material->id());
         const double left = stock == stock_left.end() ? 0.0 : stock->second;
         if (material->required_for(item.weight_kg) > left + EPS) {
