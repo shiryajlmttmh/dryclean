@@ -39,8 +39,10 @@ add_executable(dryclean
     src/main.cpp
     src/gui/login_dialog.cpp
     src/gui/main_window.cpp
+    src/gui/client_dialog.cpp
     include/gui/login_dialog.h
     include/gui/main_window.h
+    include/gui/client_dialog.h
     include/gui/qt_convert.h
 )
 target_link_libraries(dryclean PRIVATE core Qt6::Widgets)

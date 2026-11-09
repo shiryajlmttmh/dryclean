@@ -11,13 +11,16 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
+#include <array>
 
 #include "display.h"
 #include "exceptions.h"
+#include "gui/client_dialog.h"
 #include "gui/qt_convert.h"
 
 namespace {
@@ -25,6 +28,37 @@ namespace {
 constexpr int kDefaultWidth = 1100;
 constexpr int kDefaultHeight = 650;
 constexpr int kAllStatuses = -1;
+constexpr int kNoRow = -1;
+constexpr const char* kStatusSeparator = "   |   ";
+
+enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
+
+constexpr std::array<const char*, ClientColumnCount> kClientHeaders{"№", "Имя", "Телефон", "Скидка", "Заказов"};
+
+enum OrderColumn {
+    OrderId,
+    OrderClient,
+    OrderService,
+    OrderUrgent,
+    OrderStatusName,
+    OrderItems,
+    OrderCost,
+    OrderDeadline,
+    OrderReady,
+    OrderColumnCount
+};
+
+constexpr std::array<const char*, OrderColumnCount> kOrderHeaders{
+    "№", "Клиент", "Услуга", "Срочный", "Статус", "Изделий", "Стоимость", "Срок", "Прогноз готовности"};
+
+template <std::size_t N>
+QStringList make_headers(const std::array<const char*, N>& names) {
+    QStringList headers;
+    for (const char* name : names) {
+        headers << QString::fromUtf8(name);
+    }
+    return headers;
+}
 
 void configure_table(QTableWidget* table, const QStringList& headers) {
     table->setColumnCount(static_cast<int>(headers.size()));
@@ -64,6 +98,11 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     refresh();
 }
 
+bool MainWindow::can(Permission permission) const {
+    const Employee* employee = shop_.employees().find_by_id(employee_id_);
+    return employee != nullptr && employee->has_permission(permission);
+}
+
 void MainWindow::build_menu() {
     QMenu* file_menu = menuBar()->addMenu(QStringLiteral("Файл"));
     QAction* save_action = file_menu->addAction(QStringLiteral("Сохранить"));
@@ -83,17 +122,29 @@ QWidget* MainWindow::build_clients_tab() {
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
 
+    auto* toolbar = new QHBoxLayout;
     client_search_ = new QLineEdit(page);
     client_search_->setPlaceholderText(QStringLiteral("Поиск по имени или телефону"));
     client_search_->setClearButtonEnabled(true);
-    layout->addWidget(client_search_);
+    add_client_button_ = new QPushButton(QStringLiteral("Добавить"), page);
+    edit_client_button_ = new QPushButton(QStringLiteral("Изменить"), page);
+    remove_client_button_ = new QPushButton(QStringLiteral("Удалить"), page);
+    toolbar->addWidget(client_search_, 1);
+    toolbar->addWidget(add_client_button_);
+    toolbar->addWidget(edit_client_button_);
+    toolbar->addWidget(remove_client_button_);
+    layout->addLayout(toolbar);
 
     clients_table_ = new QTableWidget(page);
-    configure_table(clients_table_, {QStringLiteral("№"), QStringLiteral("Имя"), QStringLiteral("Телефон"),
-                                     QStringLiteral("Скидка"), QStringLiteral("Заказов")});
+    configure_table(clients_table_, make_headers(kClientHeaders));
     layout->addWidget(clients_table_);
 
     connect(client_search_, &QLineEdit::textChanged, this, &MainWindow::refresh_clients);
+    connect(add_client_button_, &QPushButton::clicked, this, &MainWindow::add_client);
+    connect(edit_client_button_, &QPushButton::clicked, this, &MainWindow::edit_client);
+    connect(remove_client_button_, &QPushButton::clicked, this, &MainWindow::remove_client);
+    connect(clients_table_, &QTableWidget::cellDoubleClicked, this, &MainWindow::edit_client);
+    connect(clients_table_, &QTableWidget::itemSelectionChanged, this, &MainWindow::update_client_buttons);
     return page;
 }
 
@@ -110,10 +161,7 @@ QWidget* MainWindow::build_orders_tab() {
     layout->addWidget(status_filter_);
 
     orders_table_ = new QTableWidget(page);
-    configure_table(orders_table_, {QStringLiteral("№"), QStringLiteral("Клиент"), QStringLiteral("Услуга"),
-                                    QStringLiteral("Срочный"), QStringLiteral("Статус"),
-                                    QStringLiteral("Изделий"), QStringLiteral("Стоимость"),
-                                    QStringLiteral("Срок"), QStringLiteral("Прогноз готовности")});
+    configure_table(orders_table_, make_headers(kOrderHeaders));
     layout->addWidget(orders_table_);
 
     connect(status_filter_, &QComboBox::currentIndexChanged, this, &MainWindow::refresh_orders);
@@ -143,20 +191,37 @@ void MainWindow::refresh() {
     update_status();
 }
 
+std::optional<Id> MainWindow::selected_client() const {
+    const int row = clients_table_->currentRow();
+    if (row == kNoRow || clients_table_->item(row, ClientId) == nullptr) {
+        return std::nullopt;
+    }
+    return static_cast<Id>(clients_table_->item(row, ClientId)->text().toUInt());
+}
+
+void MainWindow::update_client_buttons() {
+    const bool allowed = can(Permission::ManageClients);
+    const bool selected = selected_client().has_value();
+    add_client_button_->setEnabled(allowed);
+    edit_client_button_->setEnabled(allowed && selected);
+    remove_client_button_->setEnabled(allowed && selected);
+}
+
 void MainWindow::refresh_clients() {
     run([this] {
         const std::vector<Client> found = shop_.search_clients(client_search_->text().toStdString());
         clients_table_->setRowCount(static_cast<int>(found.size()));
         int row = 0;
         for (const Client& client : found) {
-            set_cell(clients_table_, row, 0, QString::number(client.id()), true);
-            set_cell(clients_table_, row, 1, qt_convert::text(client.name()));
-            set_cell(clients_table_, row, 2, qt_convert::text(client.phone()));
-            set_cell(clients_table_, row, 3, qt_convert::text(format_percent(client.discount())), true);
-            set_cell(clients_table_, row, 4, QString::number(client.orders_count()), true);
+            set_cell(clients_table_, row, ClientId, QString::number(client.id()), true);
+            set_cell(clients_table_, row, ClientName, qt_convert::text(client.name()));
+            set_cell(clients_table_, row, ClientPhone, qt_convert::text(client.phone()));
+            set_cell(clients_table_, row, ClientDiscount, qt_convert::text(format_percent(client.discount())), true);
+            set_cell(clients_table_, row, ClientOrders, QString::number(client.orders_count()), true);
             ++row;
         }
     });
+    update_client_buttons();
 }
 
 void MainWindow::refresh_orders() {
@@ -173,18 +238,68 @@ void MainWindow::refresh_orders() {
         for (const Order* order : shown) {
             const Client* client = shop_.clients().find_by_id(order->client_id());
             const QString client_name = client == nullptr ? QStringLiteral("?") : qt_convert::text(client->name());
-            set_cell(orders_table_, row, 0, QString::number(order->id()), true);
-            set_cell(orders_table_, row, 1, client_name);
-            set_cell(orders_table_, row, 2, qt_convert::text(display_name(order->service_type())));
-            set_cell(orders_table_, row, 3, order->is_urgent() ? QStringLiteral("Да") : QStringLiteral("Нет"));
-            set_cell(orders_table_, row, 4, qt_convert::text(display_name(order->status())));
-            set_cell(orders_table_, row, 5, QString::number(order->item_ids().size()), true);
-            set_cell(orders_table_, row, 6, qt_convert::text(format_money(order->total_cost())), true);
-            set_cell(orders_table_, row, 7, qt_convert::format_time(order->deadline()));
-            set_cell(orders_table_, row, 8, qt_convert::format_time(order->planned_ready_at()));
+            set_cell(orders_table_, row, OrderId, QString::number(order->id()), true);
+            set_cell(orders_table_, row, OrderClient, client_name);
+            set_cell(orders_table_, row, OrderService, qt_convert::text(display_name(order->service_type())));
+            set_cell(orders_table_, row, OrderUrgent, order->is_urgent() ? QStringLiteral("Да") : QStringLiteral("Нет"));
+            set_cell(orders_table_, row, OrderStatusName, qt_convert::text(display_name(order->status())));
+            set_cell(orders_table_, row, OrderItems, QString::number(order->item_ids().size()), true);
+            set_cell(orders_table_, row, OrderCost, qt_convert::text(format_money(order->total_cost())), true);
+            set_cell(orders_table_, row, OrderDeadline, qt_convert::format_time(order->deadline()));
+            set_cell(orders_table_, row, OrderReady, qt_convert::format_time(order->planned_ready_at()));
             ++row;
         }
     });
+}
+
+void MainWindow::add_client() {
+    ClientDialog dialog(
+        QStringLiteral("Новый клиент"), QString(), QString(), 0.0,
+        [this](const QString& name, const QString& phone, double discount) {
+            shop_.register_client(name.toStdString(), phone.toStdString(), discount, employee_id_);
+        },
+        this);
+    if (dialog.exec() == QDialog::Accepted) {
+        refresh();
+    }
+}
+
+void MainWindow::edit_client() {
+    const std::optional<Id> id = selected_client();
+    if (!id || !can(Permission::ManageClients)) {
+        return;
+    }
+    const Client current = shop_.clients().get(*id);
+    ClientDialog dialog(
+        QStringLiteral("Изменение клиента"), qt_convert::text(current.name()), qt_convert::text(current.phone()),
+        current.discount(),
+        [this, id](const QString& name, const QString& phone, double discount) {
+            Client updated = shop_.clients().get(*id);
+            updated.set_name(name.toStdString());
+            updated.set_phone(phone.toStdString());
+            updated.set_discount(discount);
+            shop_.update_client(updated, employee_id_);
+        },
+        this);
+    if (dialog.exec() == QDialog::Accepted) {
+        refresh();
+    }
+}
+
+void MainWindow::remove_client() {
+    const std::optional<Id> id = selected_client();
+    if (!id) {
+        return;
+    }
+    const QString name = qt_convert::text(shop_.clients().get(*id).name());
+    const auto answer = QMessageBox::question(this, QStringLiteral("Удаление клиента"),
+                                              QStringLiteral("Удалить клиента «%1»?").arg(name));
+    if (answer != QMessageBox::Yes) {
+        return;
+    }
+    if (run([this, id] { shop_.remove_client(*id, employee_id_); })) {
+        refresh();
+    }
 }
 
 void MainWindow::update_status() {
@@ -193,12 +308,10 @@ void MainWindow::update_status() {
                                             : qt_convert::text(employee->name()) + QStringLiteral(" (") +
                                                   qt_convert::text(display_name(employee->role())) +
                                                   QStringLiteral(")");
+    const QString revision = QStringLiteral("изменений: %1").arg(shop_.revision());
     const QString saved = shop_.is_dirty() ? QStringLiteral("есть несохранённые изменения")
                                            : QStringLiteral("всё сохранено");
-    status_label_->setText(QStringLiteral("%1   |   изменений: %2   |   %3")
-                               .arg(who)
-                               .arg(shop_.revision())
-                               .arg(saved));
+    status_label_->setText(QStringList{who, revision, saved}.join(QString::fromUtf8(kStatusSeparator)));
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
