@@ -1,5 +1,6 @@
 #include "gui/helpers.h"
 
+#include <QDoubleSpinBox>
 #include <QGroupBox>
 #include <QMessageBox>
 #include <QStringList>
@@ -60,5 +61,16 @@ QGroupBox* make_titled_box(const QString& title, QWidget* content, QWidget* pare
     auto* box = new QGroupBox(title, parent);
     auto* layout = new QVBoxLayout(box);
     layout->addWidget(content);
+    return box;
+}
+
+QDoubleSpinBox* make_spin_box(QWidget* parent, double minimum, double maximum, int decimals, double step,
+                              const QString& suffix, double value) {
+    auto* box = new QDoubleSpinBox(parent);
+    box->setRange(minimum, maximum);
+    box->setDecimals(decimals);
+    box->setSingleStep(step);
+    box->setSuffix(suffix);
+    box->setValue(value);
     return box;
 }

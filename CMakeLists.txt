@@ -46,6 +46,14 @@ add_executable(dryclean
     src/gui/helpers.cpp
     src/gui/planning_tab.cpp
     src/gui/batches_tab.cpp
+    src/gui/apply_dialog.cpp
+    src/gui/material_dialog.cpp
+    src/gui/machine_dialog.cpp
+    src/gui/employee_dialog.cpp
+    src/gui/table_tab.cpp
+    src/gui/materials_tab.cpp
+    src/gui/machines_tab.cpp
+    src/gui/employees_tab.cpp
     include/gui/login_dialog.h
     include/gui/main_window.h
     include/gui/client_dialog.h
@@ -56,6 +64,14 @@ add_executable(dryclean
     include/gui/helpers.h
     include/gui/planning_tab.h
     include/gui/batches_tab.h
+    include/gui/apply_dialog.h
+    include/gui/material_dialog.h
+    include/gui/machine_dialog.h
+    include/gui/employee_dialog.h
+    include/gui/table_tab.h
+    include/gui/materials_tab.h
+    include/gui/machines_tab.h
+    include/gui/employees_tab.h
     include/gui/qt_convert.h
 )
 target_link_libraries(dryclean PRIVATE core Qt6::Widgets)
