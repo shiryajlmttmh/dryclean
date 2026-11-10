@@ -40,9 +40,16 @@ add_executable(dryclean
     src/gui/login_dialog.cpp
     src/gui/main_window.cpp
     src/gui/client_dialog.cpp
+    src/gui/item_dialog.cpp
+    src/gui/order_dialog.cpp
+    src/gui/table_utils.cpp
     include/gui/login_dialog.h
     include/gui/main_window.h
     include/gui/client_dialog.h
+    include/gui/item_dialog.h
+    include/gui/order_dialog.h
+    include/gui/table_utils.h
+    include/gui/enum_combo.h
     include/gui/qt_convert.h
 )
 target_link_libraries(dryclean PRIVATE core Qt6::Widgets)

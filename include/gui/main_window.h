@@ -27,6 +27,7 @@ private slots:
     void refresh();
     void refresh_clients();
     void refresh_orders();
+    void accept_order();
     void add_client();
     void edit_client();
     void remove_client();
@@ -49,6 +50,7 @@ private:
     QPushButton* edit_client_button_ = nullptr;
     QPushButton* remove_client_button_ = nullptr;
     QComboBox* status_filter_ = nullptr;
+    QPushButton* accept_order_button_ = nullptr;
     QTableWidget* orders_table_ = nullptr;
     QLabel* status_label_ = nullptr;
 };

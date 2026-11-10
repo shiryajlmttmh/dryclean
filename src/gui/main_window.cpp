@@ -21,7 +21,9 @@
 #include "display.h"
 #include "exceptions.h"
 #include "gui/client_dialog.h"
+#include "gui/order_dialog.h"
 #include "gui/qt_convert.h"
+#include "gui/table_utils.h"
 
 namespace {
 
@@ -50,34 +52,6 @@ enum OrderColumn {
 
 constexpr std::array<const char*, OrderColumnCount> kOrderHeaders{
     "№", "Клиент", "Услуга", "Срочный", "Статус", "Изделий", "Стоимость", "Срок", "Прогноз готовности"};
-
-template <std::size_t N>
-QStringList make_headers(const std::array<const char*, N>& names) {
-    QStringList headers;
-    for (const char* name : names) {
-        headers << QString::fromUtf8(name);
-    }
-    return headers;
-}
-
-void configure_table(QTableWidget* table, const QStringList& headers) {
-    table->setColumnCount(static_cast<int>(headers.size()));
-    table->setHorizontalHeaderLabels(headers);
-    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    table->setSelectionMode(QAbstractItemView::SingleSelection);
-    table->setAlternatingRowColors(true);
-    table->verticalHeader()->setVisible(false);
-    table->horizontalHeader()->setStretchLastSection(true);
-}
-
-void set_cell(QTableWidget* table, int row, int column, const QString& text, bool right_aligned = false) {
-    auto* item = new QTableWidgetItem(text);
-    if (right_aligned) {
-        item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    }
-    table->setItem(row, column, item);
-}
 
 }
 
@@ -152,19 +126,25 @@ QWidget* MainWindow::build_orders_tab() {
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
 
+    auto* toolbar = new QHBoxLayout;
     status_filter_ = new QComboBox(page);
     status_filter_->addItem(QStringLiteral("Все статусы"), kAllStatuses);
     for (const OrderStatus status : {OrderStatus::Accepted, OrderStatus::InProgress, OrderStatus::Ready,
                                      OrderStatus::Issued}) {
         status_filter_->addItem(qt_convert::text(display_name(status)), static_cast<int>(status));
     }
-    layout->addWidget(status_filter_);
+    accept_order_button_ = new QPushButton(QStringLiteral("Принять заказ"), page);
+    toolbar->addWidget(status_filter_);
+    toolbar->addStretch(1);
+    toolbar->addWidget(accept_order_button_);
+    layout->addLayout(toolbar);
 
     orders_table_ = new QTableWidget(page);
     configure_table(orders_table_, make_headers(kOrderHeaders));
     layout->addWidget(orders_table_);
 
     connect(status_filter_, &QComboBox::currentIndexChanged, this, &MainWindow::refresh_orders);
+    connect(accept_order_button_, &QPushButton::clicked, this, &MainWindow::accept_order);
     return page;
 }
 
@@ -250,6 +230,17 @@ void MainWindow::refresh_orders() {
             ++row;
         }
     });
+    accept_order_button_->setEnabled(can(Permission::AcceptOrders));
+}
+
+void MainWindow::accept_order() {
+    OrderDialog dialog(shop_, employee_id_, this);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+    refresh();
+    QMessageBox::information(this, QStringLiteral("Заказ принят"),
+                             QStringLiteral("Заказ №%1 принят.").arg(dialog.accepted_order_id()));
 }
 
 void MainWindow::add_client() {
