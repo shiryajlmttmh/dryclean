@@ -21,7 +21,10 @@
 #include "display.h"
 #include "exceptions.h"
 #include "gui/client_dialog.h"
+#include "gui/batches_tab.h"
+#include "gui/helpers.h"
 #include "gui/order_dialog.h"
+#include "gui/planning_tab.h"
 #include "gui/qt_convert.h"
 #include "gui/table_utils.h"
 
@@ -63,6 +66,12 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     auto* tabs = new QTabWidget(this);
     tabs->addTab(build_clients_tab(), QStringLiteral("Клиенты"));
     tabs->addTab(build_orders_tab(), QStringLiteral("Заказы"));
+    planning_tab_ = new PlanningTab(shop_, employee_id_, this);
+    batches_tab_ = new BatchesTab(shop_, employee_id_, this);
+    tabs->addTab(planning_tab_, QStringLiteral("Планирование"));
+    tabs->addTab(batches_tab_, QStringLiteral("Партии"));
+    connect(planning_tab_, &PlanningTab::changed, this, &MainWindow::refresh);
+    connect(batches_tab_, &BatchesTab::changed, this, &MainWindow::refresh);
     setCentralWidget(tabs);
 
     status_label_ = new QLabel(this);
@@ -70,11 +79,6 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     build_menu();
     refresh();
-}
-
-bool MainWindow::can(Permission permission) const {
-    const Employee* employee = shop_.employees().find_by_id(employee_id_);
-    return employee != nullptr && employee->has_permission(permission);
 }
 
 void MainWindow::build_menu() {
@@ -134,9 +138,13 @@ QWidget* MainWindow::build_orders_tab() {
         status_filter_->addItem(qt_convert::text(display_name(status)), static_cast<int>(status));
     }
     accept_order_button_ = new QPushButton(QStringLiteral("Принять заказ"), page);
+    ready_order_button_ = new QPushButton(QStringLiteral("Отметить готовым"), page);
+    issue_order_button_ = new QPushButton(QStringLiteral("Выдать клиенту"), page);
     toolbar->addWidget(status_filter_);
     toolbar->addStretch(1);
     toolbar->addWidget(accept_order_button_);
+    toolbar->addWidget(ready_order_button_);
+    toolbar->addWidget(issue_order_button_);
     layout->addLayout(toolbar);
 
     orders_table_ = new QTableWidget(page);
@@ -145,50 +153,35 @@ QWidget* MainWindow::build_orders_tab() {
 
     connect(status_filter_, &QComboBox::currentIndexChanged, this, &MainWindow::refresh_orders);
     connect(accept_order_button_, &QPushButton::clicked, this, &MainWindow::accept_order);
+    connect(ready_order_button_, &QPushButton::clicked, this, &MainWindow::mark_order_ready);
+    connect(issue_order_button_, &QPushButton::clicked, this, &MainWindow::issue_order);
+    connect(orders_table_, &QTableWidget::itemSelectionChanged, this, &MainWindow::update_order_buttons);
     return page;
 }
 
-bool MainWindow::run(const std::function<void()>& action) {
-    try {
-        action();
-        return true;
-    } catch (const ShopException& error) {
-        QMessageBox::warning(this, qt_convert::text(error.title()), qt_convert::text(error.what()));
-    } catch (const std::exception& error) {
-        QMessageBox::critical(this, QStringLiteral("Непредвиденная ошибка"), qt_convert::text(error.what()));
-    }
-    return false;
-}
-
 void MainWindow::save() {
-    run([this] { shop_.save_all(); });
+    run_guarded(this, [this] { shop_.save_all(); });
     update_status();
 }
 
 void MainWindow::refresh() {
     refresh_clients();
     refresh_orders();
+    planning_tab_->refresh();
+    batches_tab_->refresh();
     update_status();
 }
 
-std::optional<Id> MainWindow::selected_client() const {
-    const int row = clients_table_->currentRow();
-    if (row == kNoRow || clients_table_->item(row, ClientId) == nullptr) {
-        return std::nullopt;
-    }
-    return static_cast<Id>(clients_table_->item(row, ClientId)->text().toUInt());
-}
-
 void MainWindow::update_client_buttons() {
-    const bool allowed = can(Permission::ManageClients);
-    const bool selected = selected_client().has_value();
+    const bool allowed = has_permission(shop_, employee_id_, Permission::ManageClients);
+    const bool selected = selected_id(clients_table_, ClientId).has_value();
     add_client_button_->setEnabled(allowed);
     edit_client_button_->setEnabled(allowed && selected);
     remove_client_button_->setEnabled(allowed && selected);
 }
 
 void MainWindow::refresh_clients() {
-    run([this] {
+    run_guarded(this, [this] {
         const std::vector<Client> found = shop_.search_clients(client_search_->text().toStdString());
         clients_table_->setRowCount(static_cast<int>(found.size()));
         int row = 0;
@@ -205,7 +198,7 @@ void MainWindow::refresh_clients() {
 }
 
 void MainWindow::refresh_orders() {
-    run([this] {
+    run_guarded(this, [this] {
         const int filter = status_filter_->currentData().toInt();
         std::vector<const Order*> shown;
         for (const Order& order : shop_.orders()) {
@@ -230,7 +223,33 @@ void MainWindow::refresh_orders() {
             ++row;
         }
     });
-    accept_order_button_->setEnabled(can(Permission::AcceptOrders));
+    update_order_buttons();
+}
+
+void MainWindow::update_order_buttons() {
+    const std::optional<Id> id = selected_id(orders_table_, OrderId);
+    const Order* order = id ? shop_.orders().find_by_id(*id) : nullptr;
+    const bool in_progress = order != nullptr && order->status() == OrderStatus::InProgress;
+    const bool ready = order != nullptr && order->status() == OrderStatus::Ready;
+    accept_order_button_->setEnabled(has_permission(shop_, employee_id_, Permission::AcceptOrders));
+    ready_order_button_->setEnabled(in_progress && has_permission(shop_, employee_id_, Permission::ChangeStatus));
+    issue_order_button_->setEnabled(ready && has_permission(shop_, employee_id_, Permission::IssueOrders));
+}
+
+void MainWindow::mark_order_ready() {
+    const std::optional<Id> id = selected_id(orders_table_, OrderId);
+    if (id && run_guarded(this, [&] {
+            shop_.change_order_status(*id, OrderStatus::Ready, employee_id_, qt_convert::now());
+        })) {
+        refresh();
+    }
+}
+
+void MainWindow::issue_order() {
+    const std::optional<Id> id = selected_id(orders_table_, OrderId);
+    if (id && run_guarded(this, [&] { shop_.issue_order(*id, employee_id_, qt_convert::now()); })) {
+        refresh();
+    }
 }
 
 void MainWindow::accept_order() {
@@ -256,8 +275,8 @@ void MainWindow::add_client() {
 }
 
 void MainWindow::edit_client() {
-    const std::optional<Id> id = selected_client();
-    if (!id || !can(Permission::ManageClients)) {
+    const std::optional<Id> id = selected_id(clients_table_, ClientId);
+    if (!id || !has_permission(shop_, employee_id_, Permission::ManageClients)) {
         return;
     }
     const Client current = shop_.clients().get(*id);
@@ -278,7 +297,7 @@ void MainWindow::edit_client() {
 }
 
 void MainWindow::remove_client() {
-    const std::optional<Id> id = selected_client();
+    const std::optional<Id> id = selected_id(clients_table_, ClientId);
     if (!id) {
         return;
     }
@@ -288,7 +307,7 @@ void MainWindow::remove_client() {
     if (answer != QMessageBox::Yes) {
         return;
     }
-    if (run([this, id] { shop_.remove_client(*id, employee_id_); })) {
+    if (run_guarded(this, [this, id] { shop_.remove_client(*id, employee_id_); })) {
         refresh();
     }
 }
@@ -317,7 +336,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         event->ignore();
         return;
     }
-    if (answer == QMessageBox::Save && !run([this] { shop_.save_all(); })) {
+    if (answer == QMessageBox::Save && !run_guarded(this, [this] { shop_.save_all(); })) {
         event->ignore();
         return;
     }

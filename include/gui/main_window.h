@@ -1,8 +1,6 @@
 #pragma once
 
 #include <QMainWindow>
-#include <functional>
-#include <optional>
 
 #include "shop.h"
 
@@ -10,6 +8,8 @@ class QCloseEvent;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class BatchesTab;
+class PlanningTab;
 class QPushButton;
 class QTableWidget;
 
@@ -28,6 +28,9 @@ private slots:
     void refresh_clients();
     void refresh_orders();
     void accept_order();
+    void mark_order_ready();
+    void issue_order();
+    void update_order_buttons();
     void add_client();
     void edit_client();
     void remove_client();
@@ -38,9 +41,6 @@ private:
     QWidget* build_clients_tab();
     QWidget* build_orders_tab();
     void update_status();
-    bool run(const std::function<void()>& action);
-    bool can(Permission permission) const;
-    std::optional<Id> selected_client() const;
 
     DryCleaningShop& shop_;
     Id employee_id_;
@@ -51,6 +51,10 @@ private:
     QPushButton* remove_client_button_ = nullptr;
     QComboBox* status_filter_ = nullptr;
     QPushButton* accept_order_button_ = nullptr;
+    QPushButton* ready_order_button_ = nullptr;
+    QPushButton* issue_order_button_ = nullptr;
+    PlanningTab* planning_tab_ = nullptr;
+    BatchesTab* batches_tab_ = nullptr;
     QTableWidget* orders_table_ = nullptr;
     QLabel* status_label_ = nullptr;
 };

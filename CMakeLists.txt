@@ -43,6 +43,9 @@ add_executable(dryclean
     src/gui/item_dialog.cpp
     src/gui/order_dialog.cpp
     src/gui/table_utils.cpp
+    src/gui/helpers.cpp
+    src/gui/planning_tab.cpp
+    src/gui/batches_tab.cpp
     include/gui/login_dialog.h
     include/gui/main_window.h
     include/gui/client_dialog.h
@@ -50,6 +53,9 @@ add_executable(dryclean
     include/gui/order_dialog.h
     include/gui/table_utils.h
     include/gui/enum_combo.h
+    include/gui/helpers.h
+    include/gui/planning_tab.h
+    include/gui/batches_tab.h
     include/gui/qt_convert.h
 )
 target_link_libraries(dryclean PRIVATE core Qt6::Widgets)
