@@ -176,9 +176,8 @@ void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
         summary_label_->setText(QStringLiteral("Добавьте изделия, чтобы рассчитать стоимость и срок."));
         return;
     }
-    const Client& client = shop_.clients().get(make_draft().client_id);
     summary_label_->setText(QStringLiteral("Скидка клиента: %1\nИтого: %2\nСрок выполнения: %3\nГотовность не позже: %4")
-                                .arg(qt_convert::text(format_percent(client.discount())),
+                                .arg(qt_convert::text(format_percent(quote->discount)),
                                      qt_convert::text(format_money(quote->total_cost)),
                                      qt_convert::text(format_hours(quote->nominal_hours)),
                                      qt_convert::format_time(quote->deadline)));

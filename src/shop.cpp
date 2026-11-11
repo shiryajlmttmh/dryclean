@@ -612,6 +612,7 @@ OrderQuote DryCleaningShop::quote_order(const OrderDraft& draft, TimePoint now) 
     }
     const Service& selected = service(draft.service_type);
     OrderQuote quote;
+    quote.discount = client.discount();
     for (const Item& item : draft.items) {
         if (item.id() != 0 || item.order_id() != 0 || item.batch_id() != 0 || !item.tag().empty()) {
             throw InvalidInputException("items", "изделие черновика не должно иметь служебных полей");
@@ -635,7 +636,6 @@ OrderQuote DryCleaningShop::quote_order(const OrderDraft& draft, TimePoint now) 
 
 Id DryCleaningShop::accept_order(const OrderDraft& draft, Id acting_employee, TimePoint now) {
     begin_mutation(acting_employee, Permission::AcceptOrders);
-    const Client& client = clients_.get(draft.client_id);
     const OrderQuote quote = quote_order(draft, now);
 
     const Id expected_id = orders_.next_id();
@@ -643,7 +643,7 @@ Id DryCleaningShop::accept_order(const OrderDraft& draft, Id acting_employee, Ti
     Repository<Order> orders = orders_;
     Repository<Client> clients = clients_;
 
-    Order order(draft.client_id, draft.service_type, draft.urgent, acting_employee, now, client.discount());
+    Order order(draft.client_id, draft.service_type, draft.urgent, acting_employee, now, quote.discount);
     std::size_t index = 0;
     for (Item item : draft.items) {
         item.set_order_id(expected_id);

@@ -25,6 +25,7 @@ struct OrderDraft {
 struct OrderQuote {
     std::vector<double> item_costs;
     std::vector<Hours> item_durations;
+    double discount = 0.0;
     double total_cost = 0.0;
     Hours nominal_hours = 0.0;
     TimePoint deadline{};
