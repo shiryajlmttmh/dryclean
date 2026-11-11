@@ -43,11 +43,22 @@ std::optional<Id> selected_id(const QTableWidget* table, int id_column) {
     return static_cast<Id>(table->item(row, id_column)->text().toUInt());
 }
 
+std::optional<std::size_t> valid_index(int row, std::size_t count) {
+    if (row < 0 || static_cast<std::size_t>(row) >= count) {
+        return std::nullopt;
+    }
+    return static_cast<std::size_t>(row);
+}
+
+QString item_tag(const DryCleaningShop& shop, Id item_id) {
+    const Item* item = shop.items().find_by_id(item_id);
+    return item == nullptr ? QString::fromUtf8(kUnknown) : qt_convert::text(item->tag());
+}
+
 QString item_tags(const DryCleaningShop& shop, const std::vector<Id>& item_ids) {
     QStringList tags;
     for (const Id id : item_ids) {
-        const Item* item = shop.items().find_by_id(id);
-        tags << (item == nullptr ? QString::fromUtf8(kUnknown) : qt_convert::text(item->tag()));
+        tags << item_tag(shop, id);
     }
     return tags.join(QString::fromUtf8(kTagSeparator));
 }
@@ -57,7 +68,7 @@ QString machine_name(const DryCleaningShop& shop, Id machine_id) {
     return machine == nullptr ? QString::fromUtf8(kUnknown) : qt_convert::text(machine->name());
 }
 
-QGroupBox* make_titled_box(const QString& title, QWidget* content, QWidget* parent) {
+QWidget* make_titled_box(const QString& title, QWidget* content, QWidget* parent) {
     auto* box = new QGroupBox(title, parent);
     auto* layout = new QVBoxLayout(box);
     layout->addWidget(content);

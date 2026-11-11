@@ -15,6 +15,7 @@
 #include "display.h"
 #include "exceptions.h"
 #include "gui/enum_combo.h"
+#include "gui/helpers.h"
 #include "gui/qt_convert.h"
 
 namespace {
@@ -31,7 +32,6 @@ constexpr double kMinAreaCm2 = 0.1;
 constexpr double kMaxAreaCm2 = 10000.0;
 constexpr double kDefaultAreaCm2 = 5.0;
 constexpr double kAreaStepCm2 = 1.0;
-constexpr const char* kErrorStyle = "color: #b00020;";
 
 QString describe(const Item::Defect& defect) {
     return QStringLiteral("%1, %2 см² — %3")
@@ -137,7 +137,7 @@ QWidget* ItemDialog::build_defects_box() {
 
     auto* row = new QHBoxLayout;
     row->addWidget(defect_type_box_);
-    row->addWidget(defect_description_edit_, 1);
+    row->addWidget(defect_description_edit_, kStretch);
     row->addWidget(defect_area_edit_);
     row->addWidget(add_button);
     layout->addLayout(row);
@@ -173,11 +173,11 @@ void ItemDialog::add_defect() {
 }
 
 void ItemDialog::remove_defect() {
-    const int row = defects_list_->currentRow();
-    if (row < 0) {
+    const std::optional<std::size_t> index = valid_index(defects_list_->currentRow(), defects_.size());
+    if (!index) {
         return;
     }
-    defects_.erase(defects_.begin() + row);
+    defects_.erase(defects_.begin() + static_cast<std::ptrdiff_t>(*index));
     show_defects();
 }
 
@@ -190,6 +190,10 @@ Item ItemDialog::build_item() const {
     for (const Item::Defect& defect : defects_) {
         built.add_defect(defect);
     }
+    built.set_id(result_.id());
+    built.set_order_id(result_.order_id());
+    built.set_tag(result_.tag());
+    built.set_batch_id(result_.batch_id());
     return built;
 }
 

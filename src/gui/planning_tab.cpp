@@ -17,6 +17,9 @@ namespace {
 
 constexpr int kWeightDecimals = 2;
 constexpr int kObjectiveDecimals = 2;
+constexpr int kAutoFieldWidth = 0;
+constexpr int kLargeTableStretch = 2;
+constexpr const char* kReasonSeparator = "; ";
 
 enum BatchColumn {
     BatchMachine,
@@ -36,6 +39,10 @@ enum UnplacedColumn { UnplacedItem, UnplacedReason, UnplacedColumnCount };
 
 constexpr std::array<const char*, UnplacedColumnCount> kUnplacedHeaders{"Изделие", "Причина"};
 
+enum ConflictColumn { ConflictFirst, ConflictSecond, ConflictReasons, ConflictColumnCount };
+
+constexpr std::array<const char*, ConflictColumnCount> kConflictHeaders{"Изделие", "Изделие", "Причины"};
+
 enum ForecastColumn { ForecastOrder, ForecastDeadline, ForecastReady, ForecastVerdict, ForecastColumnCount };
 
 constexpr std::array<const char*, ForecastColumnCount> kForecastHeaders{"Заказ №", "Срок", "Прогноз готовности",
@@ -52,27 +59,32 @@ QTableWidget* make_table(const QStringList& headers, QWidget* parent) {
 PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     : QWidget(parent), shop_(shop), employee_id_(employee_id) {
     build_button_ = new QPushButton(QStringLiteral("Построить план"), this);
+    validate_button_ = new QPushButton(QStringLiteral("Проверить план"), this);
     confirm_button_ = new QPushButton(QStringLiteral("Подтвердить план"), this);
     summary_label_ = new QLabel(this);
     summary_label_->setWordWrap(true);
 
     batches_table_ = make_table(make_headers(kBatchHeaders), this);
     unplaced_table_ = make_table(make_headers(kUnplacedHeaders), this);
+    conflicts_table_ = make_table(make_headers(kConflictHeaders), this);
     forecasts_table_ = make_table(make_headers(kForecastHeaders), this);
 
     auto* toolbar = new QHBoxLayout;
     toolbar->addWidget(build_button_);
+    toolbar->addWidget(validate_button_);
     toolbar->addWidget(confirm_button_);
-    toolbar->addStretch(1);
+    toolbar->addStretch(kStretch);
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(toolbar);
     layout->addWidget(summary_label_);
-    layout->addWidget(make_titled_box(QStringLiteral("Партии плана"), batches_table_, this), 2);
-    layout->addWidget(make_titled_box(QStringLiteral("Не размещено"), unplaced_table_, this), 1);
-    layout->addWidget(make_titled_box(QStringLiteral("Прогноз по заказам"), forecasts_table_, this), 2);
+    layout->addWidget(make_titled_box(QStringLiteral("Партии плана"), batches_table_, this), kLargeTableStretch);
+    layout->addWidget(make_titled_box(QStringLiteral("Не размещено"), unplaced_table_, this), kStretch);
+    layout->addWidget(make_titled_box(QStringLiteral("Конфликты изделий"), conflicts_table_, this), kStretch);
+    layout->addWidget(make_titled_box(QStringLiteral("Прогноз по заказам"), forecasts_table_, this), kLargeTableStretch);
 
     connect(build_button_, &QPushButton::clicked, this, &PlanningTab::build);
+    connect(validate_button_, &QPushButton::clicked, this, &PlanningTab::validate);
     connect(confirm_button_, &QPushButton::clicked, this, &PlanningTab::confirm);
     refresh();
 }
@@ -83,8 +95,10 @@ void PlanningTab::refresh() {
     show_summary();
     show_batches();
     show_unplaced();
+    show_conflicts();
     show_forecasts();
     build_button_->setEnabled(has_permission(shop_, employee_id_, Permission::BuildPlan));
+    validate_button_->setEnabled(plan_.has_value());
     confirm_button_->setEnabled(plan_ && !plan_->batches.empty() && !is_stale() &&
                                 has_permission(shop_, employee_id_, Permission::ConfirmPlan));
 }
@@ -100,7 +114,7 @@ void PlanningTab::show_summary() {
                        .arg(plan_->unplaced.size())
                        .arg(qt_convert::text(format_percent(plan_->average_load)))
                        .arg(plan_->late_count)
-                       .arg(plan_->objective, 0, 'f', kObjectiveDecimals);
+                       .arg(plan_->objective, kAutoFieldWidth, 'f', kObjectiveDecimals);
     if (is_stale()) {
         text += QStringLiteral("\nДанные изменились после построения плана — постройте его заново.");
     }
@@ -129,8 +143,32 @@ void PlanningTab::show_unplaced() {
     for (std::size_t index = 0; index < count; ++index) {
         const auto& [item_id, reason] = plan_->unplaced[index];
         const int row = static_cast<int>(index);
-        set_cell(unplaced_table_, row, UnplacedItem, item_tags(shop_, {item_id}));
+        set_cell(unplaced_table_, row, UnplacedItem, item_tag(shop_, item_id));
         set_cell(unplaced_table_, row, UnplacedReason, qt_convert::text(reason));
+    }
+}
+
+void PlanningTab::show_conflicts() {
+    conflicts_table_->setRowCount(0);
+    if (!plan_) {
+        return;
+    }
+    int row = 0;
+    for (const auto& [first, neighbours] : plan_->conflicts) {
+        for (const auto& [second, reasons] : neighbours) {
+            if (first > second) {
+                continue;
+            }
+            QStringList texts;
+            for (const std::string& reason : reasons) {
+                texts << qt_convert::text(reason);
+            }
+            conflicts_table_->insertRow(row);
+            set_cell(conflicts_table_, row, ConflictFirst, item_tag(shop_, first));
+            set_cell(conflicts_table_, row, ConflictSecond, item_tag(shop_, second));
+            set_cell(conflicts_table_, row, ConflictReasons, texts.join(QString::fromUtf8(kReasonSeparator)));
+            ++row;
+        }
     }
 }
 
@@ -161,6 +199,13 @@ void PlanningTab::build() {
         plan_ = std::move(built);
     }
     refresh();
+}
+
+void PlanningTab::validate() {
+    if (run_guarded(this, [&] { shop_.validate_plan(*plan_, qt_convert::now()); })) {
+        QMessageBox::information(this, QStringLiteral("Проверка плана"),
+                                 QStringLiteral("План корректен и может быть подтверждён."));
+    }
 }
 
 void PlanningTab::confirm() {

@@ -16,6 +16,7 @@
 #include "exceptions.h"
 #include "gui/enum_combo.h"
 #include "gui/item_dialog.h"
+#include "gui/helpers.h"
 #include "gui/qt_convert.h"
 #include "gui/table_utils.h"
 
@@ -23,9 +24,7 @@ namespace {
 
 constexpr int kDialogWidth = 780;
 constexpr int kDialogHeight = 600;
-constexpr int kNoRow = -1;
 constexpr int kWeightDecimals = 2;
-constexpr const char* kErrorStyle = "color: #b00020;";
 constexpr const char* kNoCost = "—";
 
 enum ItemColumn { ItemKind, ItemMaterial, ItemColor, ItemWeight, ItemSoil, ItemStains, ItemCost, ItemColumnCount };
@@ -55,7 +54,7 @@ OrderDialog::OrderDialog(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(form);
-    layout->addWidget(build_items_box(), 1);
+    layout->addWidget(build_items_box(), kStretch);
     layout->addWidget(summary_label_);
     layout->addWidget(error_label_);
     layout->addWidget(buttons);
@@ -98,7 +97,7 @@ QWidget* OrderDialog::build_items_box() {
     edit_button_ = new QPushButton(QStringLiteral("Изменить"), box);
     remove_button_ = new QPushButton(QStringLiteral("Удалить"), box);
     auto* row = new QHBoxLayout;
-    row->addStretch(1);
+    row->addStretch(kStretch);
     row->addWidget(add_button);
     row->addWidget(edit_button_);
     row->addWidget(remove_button_);
@@ -114,9 +113,8 @@ QWidget* OrderDialog::build_items_box() {
 
 Id OrderDialog::accepted_order_id() const noexcept { return accepted_id_; }
 
-int OrderDialog::selected_row() const {
-    const int row = items_table_->currentRow();
-    return row >= 0 && row < static_cast<int>(items_.size()) ? row : kNoRow;
+std::optional<std::size_t> OrderDialog::selected_index() const {
+    return valid_index(items_table_->currentRow(), items_.size());
 }
 
 OrderDraft OrderDialog::make_draft() const {
@@ -145,14 +143,14 @@ void OrderDialog::refresh() {
     const std::optional<OrderQuote> quote = make_quote();
     show_items(quote);
     show_summary(quote);
-    const bool has_selection = selected_row() != kNoRow;
+    const bool has_selection = selected_index().has_value();
     edit_button_->setEnabled(has_selection);
     remove_button_->setEnabled(has_selection);
     accept_button_->setEnabled(quote.has_value());
 }
 
 void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
-    const int selected = selected_row();
+    const std::optional<std::size_t> selected = selected_index();
     items_table_->blockSignals(true);
     items_table_->setRowCount(static_cast<int>(items_.size()));
     for (std::size_t index = 0; index < items_.size(); ++index) {
@@ -167,8 +165,8 @@ void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
         set_cell(items_table_, row, ItemStains, QString::number(item.stain_count()), true);
         set_cell(items_table_, row, ItemCost, cost, true);
     }
-    if (selected != kNoRow) {
-        items_table_->selectRow(selected);
+    if (selected) {
+        items_table_->selectRow(static_cast<int>(*selected));
     }
     items_table_->blockSignals(false);
 }
@@ -195,23 +193,23 @@ void OrderDialog::add_item() {
 }
 
 void OrderDialog::edit_item() {
-    const int row = selected_row();
-    if (row == kNoRow) {
+    const std::optional<std::size_t> index = selected_index();
+    if (!index) {
         return;
     }
-    ItemDialog dialog(items_[static_cast<std::size_t>(row)], QStringLiteral("Изменение изделия"), this);
+    ItemDialog dialog(items_[*index], QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() == QDialog::Accepted) {
-        items_[static_cast<std::size_t>(row)] = dialog.item();
+        items_[*index] = dialog.item();
         refresh();
     }
 }
 
 void OrderDialog::remove_item() {
-    const int row = selected_row();
-    if (row == kNoRow) {
+    const std::optional<std::size_t> index = selected_index();
+    if (!index) {
         return;
     }
-    items_.erase(items_.begin() + row);
+    items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
     refresh();
 }
 

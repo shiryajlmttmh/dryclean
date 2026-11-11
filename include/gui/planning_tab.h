@@ -23,12 +23,14 @@ signals:
 
 private slots:
     void build();
+    void validate();
     void confirm();
 
 private:
     bool is_stale() const;
     void show_batches();
     void show_unplaced();
+    void show_conflicts();
     void show_forecasts();
     void show_summary();
 
@@ -36,9 +38,11 @@ private:
     Id employee_id_;
     std::optional<Plan> plan_;
     QPushButton* build_button_;
+    QPushButton* validate_button_;
     QPushButton* confirm_button_;
     QLabel* summary_label_;
     QTableWidget* batches_table_;
     QTableWidget* unplaced_table_;
+    QTableWidget* conflicts_table_;
     QTableWidget* forecasts_table_;
 };

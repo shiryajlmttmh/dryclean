@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <vector>
 
 #include "shop.h"
 
@@ -11,6 +12,8 @@ class QLineEdit;
 class BatchesTab;
 class PlanningTab;
 class QPushButton;
+class QTabWidget;
+class TableTab;
 class QTableWidget;
 
 class MainWindow : public QMainWindow {
@@ -30,6 +33,7 @@ private slots:
     void accept_order();
     void mark_order_ready();
     void issue_order();
+    void show_order_items();
     void update_order_buttons();
     void add_client();
     void edit_client();
@@ -38,9 +42,11 @@ private slots:
 
 private:
     void build_menu();
+    void add_record_tab(QTabWidget* tabs, TableTab* tab, const QString& title);
     QWidget* build_clients_tab();
     QWidget* build_orders_tab();
     void update_status();
+    std::vector<Order> filtered_orders() const;
 
     DryCleaningShop& shop_;
     Id employee_id_;
@@ -53,8 +59,10 @@ private:
     QPushButton* accept_order_button_ = nullptr;
     QPushButton* ready_order_button_ = nullptr;
     QPushButton* issue_order_button_ = nullptr;
+    QPushButton* order_items_button_ = nullptr;
     PlanningTab* planning_tab_ = nullptr;
     BatchesTab* batches_tab_ = nullptr;
+    std::vector<TableTab*> record_tabs_;
     QTableWidget* orders_table_ = nullptr;
     QLabel* status_label_ = nullptr;
 };

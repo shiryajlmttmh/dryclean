@@ -7,12 +7,13 @@
 #include <QVBoxLayout>
 
 #include "exceptions.h"
+#include "gui/helpers.h"
 #include "gui/qt_convert.h"
 
 namespace {
 
 constexpr int kDialogWidth = 360;
-constexpr const char* kErrorStyle = "color: #b00020;";
+constexpr std::size_t kDefaultStaffCount = 1;
 constexpr const char* kHintStyle = "color: #666666;";
 
 }
@@ -32,7 +33,7 @@ LoginDialog::LoginDialog(const DryCleaningShop& shop, QWidget* parent) : QDialog
     error_label_->setWordWrap(true);
     layout->addWidget(error_label_);
 
-    if (shop_.employees().size() == 1) {
+    if (shop_.employees().size() == kDefaultStaffCount) {
         auto* hint = new QLabel(QStringLiteral("Первый запуск: войдите с логином admin."), this);
         hint->setStyleSheet(kHintStyle);
         hint->setWordWrap(true);

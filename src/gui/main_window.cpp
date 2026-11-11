@@ -22,10 +22,15 @@
 #include "exceptions.h"
 #include "gui/client_dialog.h"
 #include "gui/batches_tab.h"
+#include "gui/employees_tab.h"
 #include "gui/helpers.h"
+#include "gui/machines_tab.h"
+#include "gui/materials_tab.h"
 #include "gui/order_dialog.h"
+#include "gui/order_items_dialog.h"
 #include "gui/planning_tab.h"
 #include "gui/qt_convert.h"
+#include "gui/table_tab.h"
 #include "gui/table_utils.h"
 
 namespace {
@@ -33,7 +38,9 @@ namespace {
 constexpr int kDefaultWidth = 1100;
 constexpr int kDefaultHeight = 650;
 constexpr int kAllStatuses = -1;
+constexpr int kOverdueOrders = -2;
 constexpr int kNoRow = -1;
+constexpr double kNoDiscount = 0.0;
 constexpr const char* kStatusSeparator = "   |   ";
 
 enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
@@ -70,6 +77,9 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     batches_tab_ = new BatchesTab(shop_, employee_id_, this);
     tabs->addTab(planning_tab_, QStringLiteral("Планирование"));
     tabs->addTab(batches_tab_, QStringLiteral("Партии"));
+    add_record_tab(tabs, new MaterialsTab(shop_, employee_id_, this), QStringLiteral("Склад"));
+    add_record_tab(tabs, new MachinesTab(shop_, employee_id_, this), QStringLiteral("Оборудование"));
+    add_record_tab(tabs, new EmployeesTab(shop_, employee_id_, this), QStringLiteral("Сотрудники"));
     connect(planning_tab_, &PlanningTab::changed, this, &MainWindow::refresh);
     connect(batches_tab_, &BatchesTab::changed, this, &MainWindow::refresh);
     setCentralWidget(tabs);
@@ -79,6 +89,12 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     build_menu();
     refresh();
+}
+
+void MainWindow::add_record_tab(QTabWidget* tabs, TableTab* tab, const QString& title) {
+    tabs->addTab(tab, title);
+    record_tabs_.push_back(tab);
+    connect(tab, &TableTab::changed, this, &MainWindow::refresh);
 }
 
 void MainWindow::build_menu() {
@@ -107,7 +123,7 @@ QWidget* MainWindow::build_clients_tab() {
     add_client_button_ = new QPushButton(QStringLiteral("Добавить"), page);
     edit_client_button_ = new QPushButton(QStringLiteral("Изменить"), page);
     remove_client_button_ = new QPushButton(QStringLiteral("Удалить"), page);
-    toolbar->addWidget(client_search_, 1);
+    toolbar->addWidget(client_search_, kStretch);
     toolbar->addWidget(add_client_button_);
     toolbar->addWidget(edit_client_button_);
     toolbar->addWidget(remove_client_button_);
@@ -133,6 +149,7 @@ QWidget* MainWindow::build_orders_tab() {
     auto* toolbar = new QHBoxLayout;
     status_filter_ = new QComboBox(page);
     status_filter_->addItem(QStringLiteral("Все статусы"), kAllStatuses);
+    status_filter_->addItem(QStringLiteral("Просроченные"), kOverdueOrders);
     for (const OrderStatus status : {OrderStatus::Accepted, OrderStatus::InProgress, OrderStatus::Ready,
                                      OrderStatus::Issued}) {
         status_filter_->addItem(qt_convert::text(display_name(status)), static_cast<int>(status));
@@ -140,8 +157,10 @@ QWidget* MainWindow::build_orders_tab() {
     accept_order_button_ = new QPushButton(QStringLiteral("Принять заказ"), page);
     ready_order_button_ = new QPushButton(QStringLiteral("Отметить готовым"), page);
     issue_order_button_ = new QPushButton(QStringLiteral("Выдать клиенту"), page);
+    order_items_button_ = new QPushButton(QStringLiteral("Изделия заказа"), page);
     toolbar->addWidget(status_filter_);
-    toolbar->addStretch(1);
+    toolbar->addStretch(kStretch);
+    toolbar->addWidget(order_items_button_);
     toolbar->addWidget(accept_order_button_);
     toolbar->addWidget(ready_order_button_);
     toolbar->addWidget(issue_order_button_);
@@ -153,6 +172,8 @@ QWidget* MainWindow::build_orders_tab() {
 
     connect(status_filter_, &QComboBox::currentIndexChanged, this, &MainWindow::refresh_orders);
     connect(accept_order_button_, &QPushButton::clicked, this, &MainWindow::accept_order);
+    connect(order_items_button_, &QPushButton::clicked, this, &MainWindow::show_order_items);
+    connect(orders_table_, &QTableWidget::cellDoubleClicked, this, &MainWindow::show_order_items);
     connect(ready_order_button_, &QPushButton::clicked, this, &MainWindow::mark_order_ready);
     connect(issue_order_button_, &QPushButton::clicked, this, &MainWindow::issue_order);
     connect(orders_table_, &QTableWidget::itemSelectionChanged, this, &MainWindow::update_order_buttons);
@@ -169,6 +190,9 @@ void MainWindow::refresh() {
     refresh_orders();
     planning_tab_->refresh();
     batches_tab_->refresh();
+    for (TableTab* tab : record_tabs_) {
+        tab->refresh();
+    }
     update_status();
 }
 
@@ -197,29 +221,34 @@ void MainWindow::refresh_clients() {
     update_client_buttons();
 }
 
+std::vector<Order> MainWindow::filtered_orders() const {
+    const int filter = status_filter_->currentData().toInt();
+    if (filter == kOverdueOrders) {
+        return shop_.find_overdue_orders(qt_convert::now());
+    }
+    if (filter == kAllStatuses) {
+        return std::vector<Order>(shop_.orders().begin(), shop_.orders().end());
+    }
+    return shop_.orders_by_status(static_cast<OrderStatus>(filter));
+}
+
 void MainWindow::refresh_orders() {
     run_guarded(this, [this] {
-        const int filter = status_filter_->currentData().toInt();
-        std::vector<const Order*> shown;
-        for (const Order& order : shop_.orders()) {
-            if (filter == kAllStatuses || static_cast<int>(order.status()) == filter) {
-                shown.push_back(&order);
-            }
-        }
+        const std::vector<Order> shown = filtered_orders();
         orders_table_->setRowCount(static_cast<int>(shown.size()));
         int row = 0;
-        for (const Order* order : shown) {
-            const Client* client = shop_.clients().find_by_id(order->client_id());
+        for (const Order& order : shown) {
+            const Client* client = shop_.clients().find_by_id(order.client_id());
             const QString client_name = client == nullptr ? QStringLiteral("?") : qt_convert::text(client->name());
-            set_cell(orders_table_, row, OrderId, QString::number(order->id()), true);
+            set_cell(orders_table_, row, OrderId, QString::number(order.id()), true);
             set_cell(orders_table_, row, OrderClient, client_name);
-            set_cell(orders_table_, row, OrderService, qt_convert::text(display_name(order->service_type())));
-            set_cell(orders_table_, row, OrderUrgent, order->is_urgent() ? QStringLiteral("Да") : QStringLiteral("Нет"));
-            set_cell(orders_table_, row, OrderStatusName, qt_convert::text(display_name(order->status())));
-            set_cell(orders_table_, row, OrderItems, QString::number(order->item_ids().size()), true);
-            set_cell(orders_table_, row, OrderCost, qt_convert::text(format_money(order->total_cost())), true);
-            set_cell(orders_table_, row, OrderDeadline, qt_convert::format_time(order->deadline()));
-            set_cell(orders_table_, row, OrderReady, qt_convert::format_time(order->planned_ready_at()));
+            set_cell(orders_table_, row, OrderService, qt_convert::text(display_name(order.service_type())));
+            set_cell(orders_table_, row, OrderUrgent, order.is_urgent() ? QStringLiteral("Да") : QStringLiteral("Нет"));
+            set_cell(orders_table_, row, OrderStatusName, qt_convert::text(display_name(order.status())));
+            set_cell(orders_table_, row, OrderItems, QString::number(order.item_ids().size()), true);
+            set_cell(orders_table_, row, OrderCost, qt_convert::text(format_money(order.total_cost())), true);
+            set_cell(orders_table_, row, OrderDeadline, qt_convert::format_time(order.deadline()));
+            set_cell(orders_table_, row, OrderReady, qt_convert::format_time(order.planned_ready_at()));
             ++row;
         }
     });
@@ -231,9 +260,20 @@ void MainWindow::update_order_buttons() {
     const Order* order = id ? shop_.orders().find_by_id(*id) : nullptr;
     const bool in_progress = order != nullptr && order->status() == OrderStatus::InProgress;
     const bool ready = order != nullptr && order->status() == OrderStatus::Ready;
+    order_items_button_->setEnabled(order != nullptr);
     accept_order_button_->setEnabled(has_permission(shop_, employee_id_, Permission::AcceptOrders));
     ready_order_button_->setEnabled(in_progress && has_permission(shop_, employee_id_, Permission::ChangeStatus));
     issue_order_button_->setEnabled(ready && has_permission(shop_, employee_id_, Permission::IssueOrders));
+}
+
+void MainWindow::show_order_items() {
+    const std::optional<Id> id = selected_id(orders_table_, OrderId);
+    if (!id) {
+        return;
+    }
+    OrderItemsDialog dialog(shop_, employee_id_, *id, this);
+    dialog.exec();
+    refresh();
 }
 
 void MainWindow::mark_order_ready() {
@@ -264,7 +304,7 @@ void MainWindow::accept_order() {
 
 void MainWindow::add_client() {
     ClientDialog dialog(
-        QStringLiteral("Новый клиент"), QString(), QString(), 0.0,
+        QStringLiteral("Новый клиент"), QString(), QString(), kNoDiscount,
         [this](const QString& name, const QString& phone, double discount) {
             shop_.register_client(name.toStdString(), phone.toStdString(), discount, employee_id_);
         },

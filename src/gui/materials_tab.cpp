@@ -19,6 +19,8 @@
 namespace {
 
 constexpr int kStockDecimals = 2;
+constexpr int kSearchPosition = 0;
+constexpr int kSortPosition = 1;
 constexpr int kConsumptionDecimals = 3;
 constexpr double kMinRestock = 0.01;
 constexpr double kMaxRestock = 1000000.0;
@@ -62,8 +64,8 @@ MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
 
     restock_button_ = new QPushButton(QStringLiteral("Пополнить"), this);
 
-    toolbar_->insertWidget(0, search_edit_, 1);
-    toolbar_->insertWidget(1, sort_box_);
+    toolbar_->insertWidget(kSearchPosition, search_edit_, kStretch);
+    toolbar_->insertWidget(kSortPosition, sort_box_);
     toolbar_->addWidget(restock_button_);
 
     connect(search_edit_, &QLineEdit::textChanged, this, &TableTab::refresh);

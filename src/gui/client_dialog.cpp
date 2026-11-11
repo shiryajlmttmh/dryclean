@@ -1,5 +1,6 @@
 #include "gui/client_dialog.h"
 
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QLineEdit>
 

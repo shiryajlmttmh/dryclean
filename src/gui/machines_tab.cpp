@@ -15,7 +15,7 @@ constexpr int kCapacityDecimals = 1;
 enum MachineColumn { MachineId, MachineName, MachineType, MachineCapacity, MachineFreeAt, MachineColumnCount };
 
 constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Название", "Тип", "Вместимость, кг",
-                                                                      "Свободна с"};
+                                                                      "Доступность"};
 
 }
 
@@ -24,13 +24,15 @@ MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
 void MachinesTab::fill(QTableWidget* table) {
     table->setRowCount(static_cast<int>(shop_.machines().size()));
+    const TimePoint now = qt_convert::now();
     int row = 0;
     for (const Machine& machine : shop_.machines()) {
         set_cell(table, row, MachineId, QString::number(machine.id()), true);
         set_cell(table, row, MachineName, qt_convert::text(machine.name()));
         set_cell(table, row, MachineType, qt_convert::text(display_name(machine.type())));
         set_cell(table, row, MachineCapacity, QString::number(machine.capacity_kg(), 'f', kCapacityDecimals), true);
-        set_cell(table, row, MachineFreeAt, qt_convert::format_time(machine.free_at()));
+        set_cell(table, row, MachineFreeAt,
+                 machine.is_free_at(now) ? QStringLiteral("свободна") : qt_convert::format_time(machine.free_at()));
         ++row;
     }
 }

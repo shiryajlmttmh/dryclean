@@ -42,6 +42,7 @@ add_executable(dryclean
     src/gui/client_dialog.cpp
     src/gui/item_dialog.cpp
     src/gui/order_dialog.cpp
+    src/gui/order_items_dialog.cpp
     src/gui/table_utils.cpp
     src/gui/helpers.cpp
     src/gui/planning_tab.cpp
@@ -59,6 +60,7 @@ add_executable(dryclean
     include/gui/client_dialog.h
     include/gui/item_dialog.h
     include/gui/order_dialog.h
+    include/gui/order_items_dialog.h
     include/gui/table_utils.h
     include/gui/enum_combo.h
     include/gui/helpers.h

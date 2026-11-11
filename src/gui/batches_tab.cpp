@@ -14,6 +14,7 @@
 namespace {
 
 constexpr int kWeightDecimals = 2;
+constexpr const char* kInProgressText = "В работе";
 
 enum BatchColumn {
     BatchId,
@@ -29,6 +30,13 @@ enum BatchColumn {
     BatchColumnCount
 };
 
+QString status_text(const Batch& batch, TimePoint now) {
+    if (batch.status() == BatchStatus::Scheduled && now >= batch.planned_start_at()) {
+        return QString::fromUtf8(kInProgressText);
+    }
+    return qt_convert::text(display_name(batch.status()));
+}
+
 constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{
     "№", "Машина", "Услуга", "Изделия", "Масса, кг", "Загрузка", "Начало", "Готовность", "Статус", "Завершена"};
 
@@ -41,7 +49,7 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     configure_table(table_, make_headers(kBatchHeaders));
 
     auto* toolbar = new QHBoxLayout;
-    toolbar->addStretch(1);
+    toolbar->addStretch(kStretch);
     toolbar->addWidget(complete_button_);
 
     auto* layout = new QVBoxLayout(this);
@@ -55,6 +63,7 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
 void BatchesTab::refresh() {
     table_->setRowCount(static_cast<int>(shop_.batches().size()));
+    const TimePoint now = qt_convert::now();
     int row = 0;
     for (const Batch& batch : shop_.batches()) {
         set_cell(table_, row, BatchId, QString::number(batch.id()), true);
@@ -65,7 +74,7 @@ void BatchesTab::refresh() {
         set_cell(table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio())), true);
         set_cell(table_, row, BatchStart, qt_convert::format_time(batch.planned_start_at()));
         set_cell(table_, row, BatchReady, qt_convert::format_time(batch.planned_ready_at()));
-        set_cell(table_, row, BatchStatusName, qt_convert::text(display_name(batch.status())));
+        set_cell(table_, row, BatchStatusName, status_text(batch, now));
         set_cell(table_, row, BatchCompleted, qt_convert::format_time(batch.completed_at()));
         ++row;
     }

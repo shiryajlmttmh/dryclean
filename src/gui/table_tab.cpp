@@ -13,7 +13,7 @@ TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission,
                    QWidget* parent)
     : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission) {
     toolbar_ = new QHBoxLayout;
-    toolbar_->addStretch(1);
+    toolbar_->addStretch(kStretch);
     add_button_ = new QPushButton(QStringLiteral("Добавить"), this);
     edit_button_ = new QPushButton(QStringLiteral("Изменить"), this);
     toolbar_->addWidget(add_button_);
