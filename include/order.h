@@ -32,11 +32,9 @@ public:
 
     void set_id(Id id) noexcept;
     void add_item_id(Id item_id);
-    void remove_item_id(Id item_id);
     void set_deadline(TimePoint deadline);
     void set_planned_ready_at(std::optional<TimePoint> planned_ready_at);
     void set_total_cost(double total_cost);
-    void set_employee_id(Id employee_id);
 
     bool contains_item(Id item_id) const noexcept;
     static bool is_transition_allowed(OrderStatus from, OrderStatus to) noexcept;

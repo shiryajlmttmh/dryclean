@@ -11,7 +11,8 @@
 
 constexpr std::size_t kMaxRecords = 100000;
 constexpr std::size_t kFormatVersion = 1;
-constexpr std::size_t kFirstRecordLine = 2;
+constexpr std::size_t kHeaderLine = 1;
+constexpr std::size_t kFirstRecordLine = kHeaderLine + 1;
 inline constexpr const char* kFormatMagic = "DCLEAN";
 
 template <class T, class Pred>
@@ -48,8 +49,6 @@ public:
     iterator end() noexcept;
     const_iterator begin() const noexcept;
     const_iterator end() const noexcept;
-    const_iterator cbegin() const noexcept;
-    const_iterator cend() const noexcept;
 
     template <class Pred>
     std::vector<T> find_if(Pred pred) const;

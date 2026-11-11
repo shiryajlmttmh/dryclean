@@ -15,7 +15,8 @@
 
 namespace {
 
-constexpr std::array<ServiceType, 4> kAllServices{ServiceType::DryCleaning, ServiceType::WetCleaning,
+constexpr std::size_t kMinAdministrators = 1;
+constexpr std::array kAllServices{ServiceType::DryCleaning, ServiceType::WetCleaning,
                                                   ServiceType::StainRemoval, ServiceType::Leather};
 
 constexpr Hours kHoursPerDay = 24.0;
@@ -220,7 +221,7 @@ void write_manifest(const std::filesystem::path& path, Revision revision,
 std::map<std::string, std::size_t> read_manifest(const std::filesystem::path& path, Revision& revision) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        throw FileFormatException(kManifestName, 0, "файл манифеста отсутствует");
+        throw FileFormatException(kManifestName, kWholeFile, "файл манифеста отсутствует");
     }
     std::map<std::string, std::size_t> counts;
     std::string text;
@@ -271,15 +272,15 @@ void load_file(Repository<T>& repository, const std::filesystem::path& directory
     const std::string name = file_name_for<T>();
     std::error_code ec;
     if (!std::filesystem::exists(directory / name, ec)) {
-        throw FileFormatException(name, 0, "файл снимка отсутствует");
+        throw FileFormatException(name, kWholeFile, "файл снимка отсутствует");
     }
     const auto expected = counts.find(name);
     if (expected == counts.end()) {
-        throw FileFormatException(kManifestName, 0, "в манифесте нет файла " + name);
+        throw FileFormatException(kManifestName, kWholeFile, "в манифесте нет файла " + name);
     }
     repository.load(directory / name);
     if (repository.size() != expected->second) {
-        throw FileFormatException(name, 0, "число записей не совпадает с манифестом");
+        throw FileFormatException(name, kWholeFile, "число записей не совпадает с манифестом");
     }
 }
 
@@ -425,7 +426,7 @@ void DryCleaningShop::update_employee(const Employee& employee, Id acting_employ
     }
     const bool loses_admin = current.role() == EmployeeRole::Administrator &&
                              updated.role() != EmployeeRole::Administrator;
-    if (loses_admin && administrators_count() <= 1) {
+    if (loses_admin && administrators_count() <= kMinAdministrators) {
         throw InvalidInputException("role", "нельзя лишить прав последнего администратора");
     }
     Repository<Employee> copy = employees_;
@@ -727,12 +728,6 @@ double DryCleaningShop::calculate_item_cost(Id item_id) const {
     return service(order.service_type()).calculate_cost(item, order.is_urgent(), order.discount_snapshot());
 }
 
-Hours DryCleaningShop::calculate_item_duration(Id item_id) const {
-    const Item& item = items_.get(item_id);
-    const Order& order = orders_.get(item.order_id());
-    return service(order.service_type()).calculate_duration(item, order.is_urgent());
-}
-
 double DryCleaningShop::calculate_order_cost(Id order_id) const {
     const Order& order = orders_.get(order_id);
     double total = 0.0;
@@ -917,6 +912,10 @@ PlannedBatch DryCleaningShop::check_planned_batch(const PlannedBatch& source, Pl
     if (weight > machine->capacity_kg() + EPS) {
         throw PlanningException("масса партии превышает вместимость машины");
     }
+    const double fill = BatchPlanner::fill_ratio(weight, machine->capacity_kg());
+    if (std::abs(source.total_weight_kg - weight) > EPS || std::abs(source.fill_ratio - fill) > EPS) {
+        throw PlanningException("масса или загрузка партии в плане не совпадают с данными изделий");
+    }
     for (const PlanItem& member : members) {
         accumulate_material_needs(member, needed);
     }
@@ -925,7 +924,7 @@ PlannedBatch DryCleaningShop::check_planned_batch(const PlannedBatch& source, Pl
     checked.machine_id = source.machine_id;
     checked.service_type = source.service_type;
     checked.total_weight_kg = weight;
-    checked.fill_ratio = BatchPlanner::fill_ratio(weight, machine->capacity_kg());
+    checked.fill_ratio = fill;
     return checked;
 }
 
@@ -1157,7 +1156,7 @@ void DryCleaningShop::load_all() {
 
     if (!current) {
         if (storage_->has_data()) {
-            throw FileFormatException("CURRENT", 0, "указатель CURRENT отсутствует, но в каталоге есть данные");
+            throw FileFormatException("CURRENT", kWholeFile, "указатель CURRENT отсутствует, но в каталоге есть данные");
         }
         employees.add(Employee(kInitialAdminName, kInitialAdminLogin, EmployeeRole::Administrator));
         fresh = true;

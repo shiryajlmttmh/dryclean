@@ -11,6 +11,7 @@ namespace {
 
 constexpr auto kPlanningDelay = std::chrono::minutes(1);
 constexpr double kPercent = 100.0;
+constexpr std::size_t kMinBatchesToMerge = 2;
 
 const Machine* find_machine(const std::vector<Machine>& machines, Id id) {
     for (const Machine& machine : machines) {
@@ -126,17 +127,6 @@ void BatchPlanner::add_rule(std::unique_ptr<CompatibilityRule> rule) {
     rules_.push_back(std::move(rule));
 }
 
-std::size_t BatchPlanner::rules_count() const noexcept { return rules_.size(); }
-
-double BatchPlanner::lambda() const noexcept { return lambda_; }
-
-void BatchPlanner::set_lambda(double lambda) {
-    if (!std::isfinite(lambda) || lambda < 0.0) {
-        throw InvalidInputException("lambda", "коэффициент штрафа должен быть конечным и неотрицательным");
-    }
-    lambda_ = lambda;
-}
-
 double BatchPlanner::fill_ratio(double weight, double capacity) {
     if (!(capacity > 0.0)) {
         return 0.0;
@@ -192,18 +182,6 @@ void BatchPlanner::prioritize(std::vector<PlanItem>& items, const ConflictGraph&
         }
         return left.item_id < right.item_id;
     });
-}
-
-std::vector<std::string> BatchPlanner::explain_conflict(const ConflictGraph& graph, Id first, Id second) const {
-    const auto node = graph.find(first);
-    if (node == graph.end()) {
-        return {};
-    }
-    const auto edge = node->second.find(second);
-    if (edge == node->second.end()) {
-        return {};
-    }
-    return edge->second;
 }
 
 std::optional<std::string> BatchPlanner::can_add(const PlannedBatch& batch, const PlanItem& item,
@@ -307,7 +285,7 @@ void BatchPlanner::evaluate(Plan& plan, const std::vector<PlanItem>& items,
     }
     const std::size_t count = plan.batches.size();
     plan.late_count = late;
-    plan.objective = count == 0 ? 0.0 : static_cast<double>(count) + lambda_ * static_cast<double>(late);
+    plan.objective = count == 0 ? 0.0 : static_cast<double>(count) + kLateWeight * static_cast<double>(late);
     plan.average_load = count == 0 ? 0.0 : kPercent * fill_sum / static_cast<double>(count);
 }
 
@@ -337,7 +315,7 @@ void BatchPlanner::merge_batches(Plan& plan, const ConflictGraph& graph, const s
                                  const std::vector<Machine>& machines, TimePoint now) const {
     reschedule(plan, items, machines, now);
     evaluate(plan, items, machines);
-    while (plan.batches.size() > 1) {
+    while (plan.batches.size() >= kMinBatchesToMerge) {
         std::optional<Plan> best;
         for (std::size_t i = 0; i < plan.batches.size(); ++i) {
             const Machine* machine = find_machine(machines, plan.batches[i].machine_id);

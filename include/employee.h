@@ -23,7 +23,6 @@ public:
     void set_role(EmployeeRole role);
 
     bool has_permission(Permission permission) const noexcept;
-    std::set<Permission> permissions() const;
     static std::set<Permission> permissions_for(EmployeeRole role);
     void validate() const;
 

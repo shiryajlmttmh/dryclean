@@ -32,7 +32,7 @@ template <class T>
 std::pair<std::vector<T>, Id> load_collection(std::istream& is) {
     std::string header;
     if (!std::getline(is, header)) {
-        throw FileFormatException("", 1, "файл пуст");
+        throw FileFormatException("", kHeaderLine, "файл пуст");
     }
     std::size_t count = 0;
     Id next_id = 0;
@@ -51,10 +51,10 @@ std::pair<std::vector<T>, Id> load_collection(std::istream& is) {
         next_id = reader.get_id();
         reader.finish();
     } catch (const InvalidInputException& error) {
-        throw FileFormatException("", 1, error.what());
+        throw FileFormatException("", kHeaderLine, error.what());
     }
     if (next_id == 0) {
-        throw FileFormatException("", 1, "счётчик идентификаторов должен быть положительным");
+        throw FileFormatException("", kHeaderLine, "счётчик идентификаторов должен быть положительным");
     }
 
     std::vector<T> items;
@@ -194,16 +194,6 @@ typename Repository<T>::const_iterator Repository<T>::begin() const noexcept {
 template <class T>
 typename Repository<T>::const_iterator Repository<T>::end() const noexcept {
     return items_.end();
-}
-
-template <class T>
-typename Repository<T>::const_iterator Repository<T>::cbegin() const noexcept {
-    return items_.cbegin();
-}
-
-template <class T>
-typename Repository<T>::const_iterator Repository<T>::cend() const noexcept {
-    return items_.cend();
 }
 
 template <class T>

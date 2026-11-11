@@ -30,6 +30,7 @@ constexpr const char* kGenerationPrefix = "gen-";
 constexpr Generation kKeptGenerations = 3;
 constexpr std::size_t kMaxGenerationDigits = 18;
 constexpr std::size_t kCurrentLine = 1;
+constexpr int kNoDescriptor = -1;
 
 std::optional<Generation> parse_generation_name(const std::string& name) {
     const std::string prefix = kGenerationPrefix;
@@ -100,7 +101,7 @@ struct Storage::Lock {
         }
     }
 #else
-    int descriptor = -1;
+    int descriptor = kNoDescriptor;
 
     explicit Lock(const fs::path& path) {
         descriptor = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
@@ -109,7 +110,7 @@ struct Storage::Lock {
         }
         if (::flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
             ::close(descriptor);
-            descriptor = -1;
+            descriptor = kNoDescriptor;
             throw StorageException(path, "хранилище уже используется другим экземпляром программы");
         }
     }

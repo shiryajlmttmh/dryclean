@@ -13,16 +13,13 @@
 #include "rules.h"
 #include "types.h"
 
-constexpr double kDefaultLambda = 10.0;
+constexpr double kLateWeight = 10.0;
 
 class BatchPlanner {
 public:
     BatchPlanner() = default;
 
     void add_rule(std::unique_ptr<CompatibilityRule> rule);
-    std::size_t rules_count() const noexcept;
-    double lambda() const noexcept;
-    void set_lambda(double lambda);
 
     Plan build_plan(std::vector<PlanItem> items, const std::vector<Machine>& machines,
                     const std::vector<Material>& materials, TimePoint now, Revision source_revision) const;
@@ -31,7 +28,6 @@ public:
     Hours compute_slack(const PlanItem& item, TimePoint now) const;
     double compute_priority(const PlanItem& item, TimePoint now) const;
     void prioritize(std::vector<PlanItem>& items, const ConflictGraph& graph, TimePoint now) const;
-    std::vector<std::string> explain_conflict(const ConflictGraph& graph, Id first, Id second) const;
     static double fill_ratio(double weight, double capacity);
 
 private:
@@ -64,5 +60,4 @@ private:
     void evaluate(Plan& plan, const std::vector<PlanItem>& items, const std::vector<Machine>& machines) const;
 
     std::vector<std::unique_ptr<CompatibilityRule>> rules_;
-    double lambda_ = kDefaultLambda;
 };

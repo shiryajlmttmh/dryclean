@@ -126,17 +126,6 @@ void Order::add_item_id(Id item_id) {
     item_ids_.push_back(item_id);
 }
 
-void Order::remove_item_id(Id item_id) {
-    if (status_ != OrderStatus::Accepted) {
-        throw InvalidInputException("status", "состав заказа нельзя менять после начала обработки");
-    }
-    const auto it = std::find(item_ids_.begin(), item_ids_.end(), item_id);
-    if (it == item_ids_.end()) {
-        throw InvalidInputException("item_id", "изделия нет в заказе");
-    }
-    item_ids_.erase(it);
-}
-
 void Order::set_deadline(TimePoint deadline) {
     if (deadline < created_at_) {
         throw InvalidInputException("deadline", "срок выдачи не может быть раньше создания заказа");
@@ -154,11 +143,6 @@ void Order::set_planned_ready_at(std::optional<TimePoint> planned_ready_at) {
 void Order::set_total_cost(double total_cost) {
     check_total_cost(total_cost);
     total_cost_ = total_cost;
-}
-
-void Order::set_employee_id(Id employee_id) {
-    check_nonzero_id("employee_id", employee_id);
-    employee_id_ = employee_id;
 }
 
 bool Order::contains_item(Id item_id) const noexcept {

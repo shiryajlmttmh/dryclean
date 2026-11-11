@@ -40,7 +40,6 @@ std::string to_string(StainClass v);
 std::string to_string(OrderStatus v);
 std::string to_string(BatchStatus v);
 std::string to_string(EmployeeRole v);
-std::string to_string(Permission v);
 
 ServiceType parse_ServiceType(const std::string& s);
 MaterialGroup parse_MaterialGroup(const std::string& s);
@@ -51,7 +50,6 @@ StainClass parse_StainClass(const std::string& s);
 OrderStatus parse_OrderStatus(const std::string& s);
 BatchStatus parse_BatchStatus(const std::string& s);
 EmployeeRole parse_EmployeeRole(const std::string& s);
-Permission parse_Permission(const std::string& s);
 
 bool is_valid(ServiceType service) noexcept;
 bool is_valid(MaterialGroup group) noexcept;

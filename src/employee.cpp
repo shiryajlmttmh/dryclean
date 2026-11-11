@@ -43,8 +43,6 @@ bool Employee::has_permission(Permission permission) const noexcept {
     return permissions_for(role_).contains(permission);
 }
 
-std::set<Permission> Employee::permissions() const { return permissions_for(role_); }
-
 std::set<Permission> Employee::permissions_for(EmployeeRole role) {
     switch (role) {
         case EmployeeRole::Receptionist:

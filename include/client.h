@@ -24,7 +24,6 @@ public:
     void set_phone(std::string phone);
     void set_discount(double discount);
     void add_order_id(Id order_id);
-    void remove_order_id(Id order_id);
 
     std::size_t orders_count() const noexcept;
     bool matches(const std::string& query) const;

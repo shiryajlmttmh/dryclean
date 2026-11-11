@@ -66,8 +66,6 @@ bool Batch::contains_item(Id item_id) const noexcept {
     return std::find(item_ids_.begin(), item_ids_.end(), item_id) != item_ids_.end();
 }
 
-std::size_t Batch::items_count() const noexcept { return item_ids_.size(); }
-
 void Batch::validate() const {
     check_unique_ids("item_ids", item_ids_);
     if (item_ids_.empty()) {

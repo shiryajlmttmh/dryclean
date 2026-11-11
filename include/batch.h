@@ -31,7 +31,6 @@ public:
     void complete(Id employee_id, TimePoint now);
 
     bool contains_item(Id item_id) const noexcept;
-    std::size_t items_count() const noexcept;
     void validate() const;
 
     bool operator==(const Batch& other) const noexcept;

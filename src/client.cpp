@@ -68,14 +68,6 @@ void Client::add_order_id(Id order_id) {
     order_ids_.push_back(order_id);
 }
 
-void Client::remove_order_id(Id order_id) {
-    const auto it = std::find(order_ids_.begin(), order_ids_.end(), order_id);
-    if (it == order_ids_.end()) {
-        throw InvalidInputException("order_id", "заказ не привязан к клиенту");
-    }
-    order_ids_.erase(it);
-}
-
 std::size_t Client::orders_count() const noexcept { return order_ids_.size(); }
 
 bool Client::matches(const std::string& query) const {

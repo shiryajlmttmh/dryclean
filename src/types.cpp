@@ -8,18 +8,16 @@
 
 namespace {
 
-constexpr std::array<const char*, 4> kService{"DryCleaning", "WetCleaning", "StainRemoval", "Leather"};
-constexpr std::array<const char*, 5> kMaterial{"Basic", "Delicate", "LeatherSuede", "SheepskinVelour",
+constexpr std::array kService{"DryCleaning", "WetCleaning", "StainRemoval", "Leather"};
+constexpr std::array kMaterial{"Basic", "Delicate", "LeatherSuede", "SheepskinVelour",
                                                "NaturalFur"};
-constexpr std::array<const char*, 3> kFabric{"Dense", "Delicate", "LeatherFur"};
-constexpr std::array<const char*, 2> kColor{"Light", "Dark"};
-constexpr std::array<const char*, 3> kSoil{"Light", "Medium", "Heavy"};
-constexpr std::array<const char*, 3> kStain{"Light", "Hard", "Special"};
-constexpr std::array<const char*, 4> kOrder{"Accepted", "InProgress", "Ready", "Issued"};
-constexpr std::array<const char*, 2> kBatch{"Scheduled", "Completed"};
-constexpr std::array<const char*, 3> kRole{"Receptionist", "Operator", "Administrator"};
-constexpr std::array<const char*, 8> kPerm{"ManageClients", "AcceptOrders", "IssueOrders", "ChangeStatus",
-                                           "BuildPlan",     "ConfirmPlan",  "ManageStock", "ManageStaff"};
+constexpr std::array kFabric{"Dense", "Delicate", "LeatherFur"};
+constexpr std::array kColor{"Light", "Dark"};
+constexpr std::array kSoil{"Light", "Medium", "Heavy"};
+constexpr std::array kStain{"Light", "Hard", "Special"};
+constexpr std::array kOrder{"Accepted", "InProgress", "Ready", "Issued"};
+constexpr std::array kBatch{"Scheduled", "Completed"};
+constexpr std::array kRole{"Receptionist", "Operator", "Administrator"};
 
 template <class E, std::size_t N>
 std::string enum_to_string(E value, const std::array<const char*, N>& names, const char* type_name) {
@@ -51,7 +49,6 @@ std::string to_string(StainClass v) { return enum_to_string(v, kStain, "StainCla
 std::string to_string(OrderStatus v) { return enum_to_string(v, kOrder, "OrderStatus"); }
 std::string to_string(BatchStatus v) { return enum_to_string(v, kBatch, "BatchStatus"); }
 std::string to_string(EmployeeRole v) { return enum_to_string(v, kRole, "EmployeeRole"); }
-std::string to_string(Permission v) { return enum_to_string(v, kPerm, "Permission"); }
 
 ServiceType parse_ServiceType(const std::string& s) {
     return enum_from_string<ServiceType>(s, kService, "ServiceType");
@@ -80,10 +77,6 @@ BatchStatus parse_BatchStatus(const std::string& s) {
 EmployeeRole parse_EmployeeRole(const std::string& s) {
     return enum_from_string<EmployeeRole>(s, kRole, "EmployeeRole");
 }
-Permission parse_Permission(const std::string& s) {
-    return enum_from_string<Permission>(s, kPerm, "Permission");
-}
-
 bool is_valid(ServiceType service) noexcept { return static_cast<std::size_t>(service) < kService.size(); }
 
 bool is_valid(MaterialGroup group) noexcept { return static_cast<std::size_t>(group) < kMaterial.size(); }
@@ -104,7 +97,9 @@ bool is_valid(EmployeeRole role) noexcept { return static_cast<std::size_t>(role
 
 namespace {
 
-using FractionalHours = std::chrono::duration<double, std::ratio<3600>>;
+constexpr std::intmax_t kSecondsPerHour = 3600;
+
+using FractionalHours = std::chrono::duration<double, std::ratio<kSecondsPerHour>>;
 using FractionalMillis = std::chrono::duration<double, std::milli>;
 
 }

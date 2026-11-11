@@ -7,6 +7,8 @@
 
 #include "types.h"
 
+inline constexpr std::size_t kWholeFile = 0;
+
 class ShopException : public std::runtime_error {
 public:
     explicit ShopException(const std::string& message);

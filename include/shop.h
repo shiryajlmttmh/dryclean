@@ -69,7 +69,6 @@ public:
     Id accept_order(const OrderDraft& draft, Id acting_employee, TimePoint now);
     void update_item(const Item& item, Id acting_employee);
     double calculate_item_cost(Id item_id) const;
-    Hours calculate_item_duration(Id item_id) const;
     double calculate_order_cost(Id order_id) const;
     std::optional<TimePoint> estimate_ready_time(Id order_id) const;
     std::vector<Order> orders_by_status(OrderStatus status) const;

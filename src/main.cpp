@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <cstdlib>
 #include <QMessageBox>
 #include <QStandardPaths>
 
@@ -29,12 +30,12 @@ int main(int argc, char* argv[]) {
         }
     } catch (const ShopException& error) {
         QMessageBox::critical(nullptr, qt_convert::text(error.title()), qt_convert::text(error.what()));
-        return 1;
+        return EXIT_FAILURE;
     }
 
     LoginDialog login(shop);
     if (login.exec() != QDialog::Accepted) {
-        return 0;
+        return EXIT_SUCCESS;
     }
 
     MainWindow window(shop, login.employee_id());

@@ -13,16 +13,16 @@ constexpr const char* kHoursSuffix = "ч";
 constexpr const char* kPercentSuffix = "%";
 constexpr const char* kTrailingZero = ".0";
 
-constexpr std::array<const char*, 4> kService{"Сухая чистка", "Влажная чистка", "Выведение пятен", "Кожа и мех"};
-constexpr std::array<const char*, 5> kMaterial{"Обычный", "Деликатный", "Кожа и замша", "Овчина и велюр",
+constexpr std::array kService{"Сухая чистка", "Влажная чистка", "Выведение пятен", "Кожа и мех"};
+constexpr std::array kMaterial{"Обычный", "Деликатный", "Кожа и замша", "Овчина и велюр",
                                                "Натуральный мех"};
-constexpr std::array<const char*, 3> kFabric{"Плотная", "Деликатная", "Кожа и мех"};
-constexpr std::array<const char*, 2> kColor{"Светлый", "Тёмный"};
-constexpr std::array<const char*, 3> kSoil{"Лёгкое", "Среднее", "Сильное"};
-constexpr std::array<const char*, 3> kStain{"Лёгкое", "Стойкое", "Особое"};
-constexpr std::array<const char*, 4> kOrder{"Принят", "В обработке", "Готов", "Выдан"};
-constexpr std::array<const char*, 2> kBatch{"Запланирована", "Завершена"};
-constexpr std::array<const char*, 3> kRole{"Приёмщик", "Оператор", "Администратор"};
+constexpr std::array kFabric{"Плотная", "Деликатная", "Кожа и мех"};
+constexpr std::array kColor{"Светлый", "Тёмный"};
+constexpr std::array kSoil{"Лёгкое", "Среднее", "Сильное"};
+constexpr std::array kStain{"Лёгкое", "Стойкое", "Особое"};
+constexpr std::array kOrder{"Принят", "В обработке", "Готов", "Выдан"};
+constexpr std::array kBatch{"Запланирована", "Завершена"};
+constexpr std::array kRole{"Приёмщик", "Оператор", "Администратор"};
 
 template <class E, std::size_t N>
 std::string name_of(E value, const std::array<const char*, N>& names) {
