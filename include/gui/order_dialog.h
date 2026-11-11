@@ -35,7 +35,6 @@ private:
     std::optional<OrderQuote> make_quote();
     void show_items(const std::optional<OrderQuote>& quote);
     void show_summary(const std::optional<OrderQuote>& quote);
-    std::optional<std::size_t> selected_index() const;
 
     DryCleaningShop& shop_;
     Id employee_id_;

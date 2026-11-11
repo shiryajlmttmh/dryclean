@@ -113,10 +113,6 @@ QWidget* OrderDialog::build_items_box() {
 
 Id OrderDialog::accepted_order_id() const noexcept { return accepted_id_; }
 
-std::optional<std::size_t> OrderDialog::selected_index() const {
-    return valid_index(items_table_->currentRow(), items_.size());
-}
-
 OrderDraft OrderDialog::make_draft() const {
     OrderDraft draft;
     draft.client_id = static_cast<Id>(client_box_->currentData().toUInt());
@@ -143,14 +139,14 @@ void OrderDialog::refresh() {
     const std::optional<OrderQuote> quote = make_quote();
     show_items(quote);
     show_summary(quote);
-    const bool has_selection = selected_index().has_value();
+    const bool has_selection = selected_position(items_table_, items_.size()).has_value();
     edit_button_->setEnabled(has_selection);
     remove_button_->setEnabled(has_selection);
     accept_button_->setEnabled(quote.has_value());
 }
 
 void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
-    const std::optional<std::size_t> selected = selected_index();
+    const std::optional<std::size_t> selected = selected_position(items_table_, items_.size());
     items_table_->blockSignals(true);
     items_table_->setRowCount(static_cast<int>(items_.size()));
     for (std::size_t index = 0; index < items_.size(); ++index) {
@@ -164,9 +160,10 @@ void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
         set_cell(items_table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
         set_cell(items_table_, row, ItemStains, QString::number(item.stain_count()), true);
         set_cell(items_table_, row, ItemCost, cost, true);
-    }
-    if (selected) {
-        items_table_->selectRow(static_cast<int>(*selected));
+        set_row_position(items_table_, row, index);
+        if (selected == index) {
+            items_table_->selectRow(row);
+        }
     }
     items_table_->blockSignals(false);
 }
@@ -192,7 +189,7 @@ void OrderDialog::add_item() {
 }
 
 void OrderDialog::edit_item() {
-    const std::optional<std::size_t> index = selected_index();
+    const std::optional<std::size_t> index = selected_position(items_table_, items_.size());
     if (!index) {
         return;
     }
@@ -204,7 +201,7 @@ void OrderDialog::edit_item() {
 }
 
 void OrderDialog::remove_item() {
-    const std::optional<std::size_t> index = selected_index();
+    const std::optional<std::size_t> index = selected_position(items_table_, items_.size());
     if (!index) {
         return;
     }

@@ -2,9 +2,11 @@
 
 #include <QDoubleSpinBox>
 #include <QGroupBox>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QStringList>
 #include <QTableWidget>
+#include <QVariant>
 #include <QVBoxLayout>
 
 #include "exceptions.h"
@@ -15,6 +17,16 @@ namespace {
 constexpr int kNoRow = -1;
 constexpr const char* kUnknown = "?";
 constexpr const char* kTagSeparator = ", ";
+constexpr int kPositionColumn = 0;
+constexpr int kPositionRole = Qt::UserRole;
+
+std::optional<std::size_t> stored_position(const QVariant& value, std::size_t count) {
+    if (!value.isValid()) {
+        return std::nullopt;
+    }
+    const std::size_t position = static_cast<std::size_t>(value.toULongLong());
+    return position < count ? std::optional<std::size_t>(position) : std::nullopt;
+}
 
 }
 
@@ -43,11 +55,23 @@ std::optional<Id> selected_id(const QTableWidget* table, int id_column) {
     return static_cast<Id>(table->item(row, id_column)->text().toUInt());
 }
 
-std::optional<std::size_t> valid_index(int row, std::size_t count) {
-    if (row < 0 || static_cast<std::size_t>(row) >= count) {
-        return std::nullopt;
-    }
-    return static_cast<std::size_t>(row);
+void set_row_position(QTableWidget* table, int row, std::size_t position) {
+    table->item(row, kPositionColumn)->setData(kPositionRole, static_cast<qulonglong>(position));
+}
+
+std::optional<std::size_t> selected_position(const QTableWidget* table, std::size_t count) {
+    const QTableWidgetItem* item = table->item(table->currentRow(), kPositionColumn);
+    return item == nullptr ? std::nullopt : stored_position(item->data(kPositionRole), count);
+}
+
+void add_positioned_item(QListWidget* list, const QString& text, std::size_t position) {
+    auto* item = new QListWidgetItem(text, list);
+    item->setData(kPositionRole, static_cast<qulonglong>(position));
+}
+
+std::optional<std::size_t> selected_position(const QListWidget* list, std::size_t count) {
+    const QListWidgetItem* item = list->currentItem();
+    return item == nullptr ? std::nullopt : stored_position(item->data(kPositionRole), count);
 }
 
 QString item_tag(const DryCleaningShop& shop, Id item_id) {

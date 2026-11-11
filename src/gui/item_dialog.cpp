@@ -150,8 +150,8 @@ QWidget* ItemDialog::build_defects_box() {
 
 void ItemDialog::show_defects() {
     defects_list_->clear();
-    for (const Item::Defect& defect : defects_) {
-        defects_list_->addItem(describe(defect));
+    for (std::size_t position = 0; position < defects_.size(); ++position) {
+        add_positioned_item(defects_list_, describe(defects_[position]), position);
     }
 }
 
@@ -173,7 +173,7 @@ void ItemDialog::add_defect() {
 }
 
 void ItemDialog::remove_defect() {
-    const std::optional<std::size_t> index = valid_index(defects_list_->currentRow(), defects_.size());
+    const std::optional<std::size_t> index = selected_position(defects_list_, defects_.size());
     if (!index) {
         return;
     }

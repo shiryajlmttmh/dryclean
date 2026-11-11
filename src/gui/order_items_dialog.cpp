@@ -21,6 +21,7 @@ constexpr int kDialogHeight = 420;
 constexpr int kWeightDecimals = 2;
 
 enum ItemColumn {
+    ItemId,
     ItemTag,
     ItemKind,
     ItemMaterial,
@@ -32,7 +33,7 @@ enum ItemColumn {
     ItemColumnCount
 };
 
-constexpr std::array<const char*, ItemColumnCount> kItemHeaders{"Метка", "Изделие", "Материал", "Цвет",
+constexpr std::array<const char*, ItemColumnCount> kItemHeaders{"№", "Метка", "Изделие", "Материал", "Цвет",
                                                                 "Масса, кг", "Загрязнение", "Пятен", "Цена"};
 
 }
@@ -78,12 +79,13 @@ void OrderItemsDialog::refresh() {
                                 .arg(qt_convert::text(display_name(order.status())),
                                      qt_convert::text(format_money(order.total_cost())),
                                      qt_convert::format_time(order.deadline())));
-    const std::optional<std::size_t> selected = valid_index(table_->currentRow(), order.item_ids().size());
+    const std::optional<Id> selected = selected_id(table_, ItemId);
     table_->blockSignals(true);
     table_->setRowCount(static_cast<int>(order.item_ids().size()));
     int row = 0;
     for (const Id id : order.item_ids()) {
         const Item& item = shop_.items().get(id);
+        set_cell(table_, row, ItemId, QString::number(id), true);
         set_cell(table_, row, ItemTag, qt_convert::text(item.tag()));
         set_cell(table_, row, ItemKind, qt_convert::text(item.kind()));
         set_cell(table_, row, ItemMaterial, qt_convert::text(item.material_name()));
@@ -92,22 +94,21 @@ void OrderItemsDialog::refresh() {
         set_cell(table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
         set_cell(table_, row, ItemStains, QString::number(item.stain_count()), true);
         set_cell(table_, row, ItemCost, qt_convert::text(format_money(shop_.calculate_item_cost(id))), true);
+        if (selected == id) {
+            table_->selectRow(row);
+        }
         ++row;
     }
-    if (selected) {
-        table_->selectRow(static_cast<int>(*selected));
-    }
     table_->blockSignals(false);
-    edit_button_->setEnabled(can_edit() && valid_index(table_->currentRow(), order.item_ids().size()));
+    edit_button_->setEnabled(can_edit() && selected_id(table_, ItemId).has_value());
 }
 
 void OrderItemsDialog::edit_item() {
-    const std::vector<Id>& ids = shop_.orders().get(order_id_).item_ids();
-    const std::optional<std::size_t> index = valid_index(table_->currentRow(), ids.size());
-    if (!index || !can_edit()) {
+    const std::optional<Id> id = selected_id(table_, ItemId);
+    if (!id || !can_edit()) {
         return;
     }
-    ItemDialog dialog(shop_.items().get(ids[*index]), QStringLiteral("Изменение изделия"), this);
+    ItemDialog dialog(shop_.items().get(*id), QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }
