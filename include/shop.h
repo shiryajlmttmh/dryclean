@@ -91,6 +91,7 @@ public:
     Id add_material(Material material, Id acting_employee);
     void update_material(const Material& material, Id acting_employee);
     void restock_material(Id material_id, double amount, Id acting_employee);
+    void write_off_material(Id material_id, double amount, Id acting_employee);
     std::vector<Material> find_materials(const std::string& query, MaterialOrder order) const;
 
 private:

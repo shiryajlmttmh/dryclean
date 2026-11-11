@@ -573,6 +573,20 @@ void DryCleaningShop::restock_material(Id material_id, double amount, Id acting_
     publish();
 }
 
+void DryCleaningShop::write_off_material(Id material_id, double amount, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::ManageStock);
+    if (!(amount > 0.0)) {
+        throw InvalidInputException("amount", "количество списания должно быть больше нуля");
+    }
+    Material updated = materials_.get(material_id);
+    updated.write_off(amount);
+    updated.validate();
+    Repository<Material> copy = materials_;
+    replace_by_id(copy, updated);
+    materials_.swap(copy);
+    publish();
+}
+
 std::vector<Material> DryCleaningShop::find_materials(const std::string& query, MaterialOrder order) const {
     const std::string key = to_lower_text(normalize_text(query));
     std::vector<Material> result = materials_.find_if([&key](const Material& material) {

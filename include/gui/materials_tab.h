@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "gui/table_tab.h"
 
 class QComboBox;
@@ -17,8 +19,12 @@ protected:
 
 private:
     void restock();
+    void write_off();
+    void change_stock(const QString& title, const QString& prompt,
+                      const std::function<void(Id, double)>& apply);
 
     QLineEdit* search_edit_;
     QComboBox* sort_box_;
     QPushButton* restock_button_;
+    QPushButton* write_off_button_;
 };
