@@ -22,6 +22,8 @@ struct OrderDraft {
     bool urgent = false;
 };
 
+enum class MaterialOrder { ByName, ByStock };
+
 struct OrderQuote {
     std::vector<double> item_costs;
     std::vector<Hours> item_durations;
@@ -89,9 +91,7 @@ public:
     Id add_material(Material material, Id acting_employee);
     void update_material(const Material& material, Id acting_employee);
     void restock_material(Id material_id, double amount, Id acting_employee);
-    std::vector<Material> find_materials_by_name(const std::string& query) const;
-    std::vector<Material> materials_sorted_by_name() const;
-    std::vector<Material> materials_sorted_by_stock() const;
+    std::vector<Material> find_materials(const std::string& query, MaterialOrder order) const;
 
 private:
     void begin_mutation(Id acting_employee, Permission permission) const;

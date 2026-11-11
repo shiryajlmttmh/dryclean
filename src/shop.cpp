@@ -573,29 +573,17 @@ void DryCleaningShop::restock_material(Id material_id, double amount, Id acting_
     publish();
 }
 
-std::vector<Material> DryCleaningShop::find_materials_by_name(const std::string& query) const {
+std::vector<Material> DryCleaningShop::find_materials(const std::string& query, MaterialOrder order) const {
     const std::string key = to_lower_text(normalize_text(query));
-    return materials_.find_if([&key](const Material& material) {
+    std::vector<Material> result = materials_.find_if([&key](const Material& material) {
         return key.empty() || to_lower_text(material.name()).find(key) != std::string::npos;
     });
-}
-
-std::vector<Material> DryCleaningShop::materials_sorted_by_name() const {
-    std::vector<Material> result = materials_.find_if([](const Material&) { return true; });
-    std::sort(result.begin(), result.end(), [](const Material& left, const Material& right) {
-        if (left.name() != right.name()) {
-            return left.name() < right.name();
-        }
-        return left.id() < right.id();
-    });
-    return result;
-}
-
-std::vector<Material> DryCleaningShop::materials_sorted_by_stock() const {
-    std::vector<Material> result = materials_.find_if([](const Material&) { return true; });
-    std::sort(result.begin(), result.end(), [](const Material& left, const Material& right) {
-        if (left.stock() != right.stock()) {
+    std::sort(result.begin(), result.end(), [order](const Material& left, const Material& right) {
+        if (order == MaterialOrder::ByStock && left.stock() != right.stock()) {
             return left.stock() < right.stock();
+        }
+        if (order == MaterialOrder::ByName && left.name() != right.name()) {
+            return left.name() < right.name();
         }
         return left.id() < right.id();
     });

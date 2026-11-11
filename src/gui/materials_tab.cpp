@@ -8,7 +8,6 @@
 #include <QStringList>
 #include <QTableWidget>
 #include <array>
-#include <set>
 
 #include "display.h"
 #include "gui/helpers.h"
@@ -26,8 +25,6 @@ constexpr double kMinRestock = 0.01;
 constexpr double kMaxRestock = 1000000.0;
 constexpr double kDefaultRestock = 1.0;
 constexpr const char* kServiceSeparator = ", ";
-
-enum SortMode { SortByName, SortByStock };
 
 enum MaterialColumn {
     MaterialId,
@@ -59,8 +56,8 @@ MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
     search_edit_->setClearButtonEnabled(true);
 
     sort_box_ = new QComboBox(this);
-    sort_box_->addItem(QStringLiteral("По названию"), SortByName);
-    sort_box_->addItem(QStringLiteral("По остатку"), SortByStock);
+    sort_box_->addItem(QStringLiteral("По названию"), static_cast<int>(MaterialOrder::ByName));
+    sort_box_->addItem(QStringLiteral("По остатку"), static_cast<int>(MaterialOrder::ByStock));
 
     restock_button_ = new QPushButton(QStringLiteral("Пополнить"), this);
 
@@ -74,19 +71,11 @@ MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
 }
 
 void MaterialsTab::fill(QTableWidget* table) {
-    std::set<Id> matching;
-    for (const Material& material : shop_.find_materials_by_name(search_edit_->text().toStdString())) {
-        matching.insert(material.id());
-    }
-    const std::vector<Material> sorted = sort_box_->currentData().toInt() == SortByStock
-                                             ? shop_.materials_sorted_by_stock()
-                                             : shop_.materials_sorted_by_name();
-    table->setRowCount(static_cast<int>(matching.size()));
+    const std::vector<Material> found = shop_.find_materials(
+        search_edit_->text().toStdString(), static_cast<MaterialOrder>(sort_box_->currentData().toInt()));
+    table->setRowCount(static_cast<int>(found.size()));
     int row = 0;
-    for (const Material& material : sorted) {
-        if (!matching.contains(material.id())) {
-            continue;
-        }
+    for (const Material& material : found) {
         set_cell(table, row, MaterialId, QString::number(material.id()), true);
         set_cell(table, row, MaterialName, qt_convert::text(material.name()));
         set_cell(table, row, MaterialUnit, qt_convert::text(material.unit()));
