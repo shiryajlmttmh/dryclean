@@ -99,14 +99,14 @@ void MaterialsTab::update_buttons() {
 
 void MaterialsTab::add_record() {
     MaterialDialog dialog(
-        QStringLiteral("Новый материал"), Material(), true,
+        QStringLiteral("Новый материал"), Material(), /*is_new=*/true,
         [this](const Material& material) { shop_.add_material(material, employee_id_); }, this);
     show_dialog(dialog);
 }
 
 void MaterialsTab::edit_record(Id id) {
     MaterialDialog dialog(
-        QStringLiteral("Изменение материала"), shop_.materials().get(id), false,
+        QStringLiteral("Изменение материала"), shop_.materials().get(id), /*is_new=*/false,
         [this, id](const Material& material) {
             Material updated = material;
             updated.set_id(id);

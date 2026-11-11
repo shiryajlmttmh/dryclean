@@ -26,7 +26,7 @@ constexpr ServiceType kServices[] = {ServiceType::DryCleaning, ServiceType::WetC
 
 }
 
-MaterialDialog::MaterialDialog(const QString& title, const Material& initial, bool editing, Apply apply,
+MaterialDialog::MaterialDialog(const QString& title, const Material& initial, bool is_new, Apply apply,
                                QWidget* parent)
     : ApplyDialog(title, parent), apply_(std::move(apply)) {
     name_edit_ = new QLineEdit(qt_convert::text(initial.name()), this);
@@ -38,8 +38,9 @@ MaterialDialog::MaterialDialog(const QString& title, const Material& initial, bo
         make_spin_box(this, kMinConsumption, kMaxConsumption, kConsumptionDecimals, kConsumptionStep, QString(),
                       initial.consumption_per_kg() > 0.0 ? initial.consumption_per_kg() : kDefaultConsumption);
 
-    unit_edit_->setEnabled(!editing);
-    stock_edit_->setEnabled(!editing);
+    // единица измерения и остаток задаются только при создании материала
+    unit_edit_->setEnabled(is_new);
+    stock_edit_->setEnabled(is_new);
 
     form()->addRow(QStringLiteral("Название:"), name_edit_);
     form()->addRow(QStringLiteral("Единица измерения:"), unit_edit_);

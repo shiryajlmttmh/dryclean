@@ -16,7 +16,7 @@ class MaterialDialog : public ApplyDialog {
 public:
     using Apply = std::function<void(const Material&)>;
 
-    MaterialDialog(const QString& title, const Material& initial, bool editing, Apply apply,
+    MaterialDialog(const QString& title, const Material& initial, bool is_new, Apply apply,
                    QWidget* parent = nullptr);
 
 protected:
