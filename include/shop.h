@@ -58,8 +58,10 @@ public:
 
     Id add_employee(Employee employee, Id acting_employee);
     void update_employee(const Employee& employee, Id acting_employee);
+    void remove_employee(Id employee_id, Id acting_employee);
     Id add_machine(Machine machine, Id acting_employee);
     void update_machine(const Machine& machine, Id acting_employee);
+    void remove_machine(Id machine_id, Id acting_employee);
 
     Id register_client(std::string name, std::string phone, double discount, Id acting_employee);
     void update_client(const Client& client, Id acting_employee);
@@ -76,6 +78,7 @@ public:
     std::optional<TimePoint> estimate_ready_time(Id order_id) const;
     std::vector<Order> orders_by_status(OrderStatus status) const;
     std::vector<Order> find_overdue_orders(TimePoint now) const;
+    void remove_order(Id order_id, Id acting_employee);
     void change_order_status(Id order_id, OrderStatus status, Id acting_employee, TimePoint now);
     void issue_order(Id order_id, Id acting_employee, TimePoint now);
 
@@ -92,12 +95,14 @@ public:
     void update_material(const Material& material, Id acting_employee);
     void restock_material(Id material_id, double amount, Id acting_employee);
     void write_off_material(Id material_id, double amount, Id acting_employee);
+    void remove_material(Id material_id, Id acting_employee);
     std::vector<Material> find_materials(const std::string& query, MaterialOrder order) const;
 
 private:
     void begin_mutation(Id acting_employee, Permission permission) const;
     void publish() noexcept;
     std::size_t administrators_count() const;
+    bool has_employee_records(Id employee_id) const;
     bool has_scheduled_batch(Id machine_id) const;
     class PlanClaims {
     public:
@@ -115,8 +120,8 @@ private:
                                      Hours& duration) const;
     void accumulate_material_needs(const PlanItem& member, std::map<Id, double>& needed) const;
     void check_material_stock(const std::map<Id, double>& needed) const;
-    void check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations, const Plan& plan,
-                        TimePoint now) const;
+    void check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations,
+                        const Plan& plan) const;
     void check_references(const Repository<Client>& clients, const Repository<Item>& items,
                           const Repository<Order>& orders, const Repository<Batch>& batches,
                           const Repository<Employee>& employees, const Repository<Machine>& machines) const;

@@ -20,12 +20,14 @@ constexpr std::array kAllServices{ServiceType::DryCleaning, ServiceType::WetClea
                                                   ServiceType::StainRemoval, ServiceType::Leather};
 
 constexpr Hours kHoursPerDay = 24.0;
+constexpr Hours kStartReserveHours = 1.0;
 
 TimePoint deadline_for(TimePoint start, Hours nominal_hours) {
-    return add_hours(start, kHoursPerDay * std::ceil(nominal_hours / kHoursPerDay));
+    return add_hours(start, kHoursPerDay * std::ceil((nominal_hours + kStartReserveHours) / kHoursPerDay));
 }
 
 constexpr auto kPlanningDelay = std::chrono::minutes(1);
+constexpr auto kPlanLifetime = std::chrono::minutes(30);
 
 constexpr const char* kManifestName = "manifest.txt";
 constexpr const char* kManifestType = "manifest";
@@ -511,6 +513,79 @@ void DryCleaningShop::remove_client(Id client_id, Id acting_employee) {
     publish();
 }
 
+bool DryCleaningShop::has_employee_records(Id employee_id) const {
+    const bool in_orders = std::any_of(orders_.begin(), orders_.end(), [employee_id](const Order& order) {
+        return order.employee_id() == employee_id ||
+               std::any_of(order.history().begin(), order.history().end(),
+                           [employee_id](const StatusRecord& record) { return record.employee_id() == employee_id; });
+    });
+    return in_orders || std::any_of(batches_.begin(), batches_.end(), [employee_id](const Batch& batch) {
+               return batch.created_by() == employee_id || batch.completed_by() == employee_id;
+           });
+}
+
+void DryCleaningShop::remove_employee(Id employee_id, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::ManageStaff);
+    const Employee& target = employees_.get(employee_id);
+    if (employee_id == acting_employee) {
+        throw InvalidInputException("employee", "нельзя удалить самого себя");
+    }
+    if (target.role() == EmployeeRole::Administrator && administrators_count() <= kMinAdministrators) {
+        throw InvalidInputException("employee", "нельзя удалить последнего администратора");
+    }
+    if (has_employee_records(employee_id)) {
+        throw InvalidInputException("employee", "нельзя удалить сотрудника, который принимал заказы или создавал партии");
+    }
+    Repository<Employee> copy = employees_;
+    copy.remove(employee_id);
+    employees_.swap(copy);
+    publish();
+}
+
+void DryCleaningShop::remove_machine(Id machine_id, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::ManageStaff);
+    const bool has_batches = std::any_of(batches_.begin(), batches_.end(), [machine_id](const Batch& batch) {
+        return batch.machine_id() == machine_id;
+    });
+    if (has_batches) {
+        throw InvalidInputException("machine", "нельзя удалить машину, на которой запланированы или выполнялись партии");
+    }
+    Repository<Machine> copy = machines_;
+    copy.remove(machine_id);
+    machines_.swap(copy);
+    publish();
+}
+
+void DryCleaningShop::remove_material(Id material_id, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::ManageStock);
+    Repository<Material> copy = materials_;
+    copy.remove(material_id);
+    materials_.swap(copy);
+    publish();
+}
+
+void DryCleaningShop::remove_order(Id order_id, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::AcceptOrders);
+    const Order& order = orders_.get(order_id);
+    const bool in_work = std::any_of(order.item_ids().begin(), order.item_ids().end(),
+                                     [this](Id item_id) { return items_.get(item_id).is_batched(); });
+    if (order.status() != OrderStatus::Accepted || in_work) {
+        throw InvalidInputException("order", "удалить можно только принятый заказ, который ещё не передан в обработку");
+    }
+    Repository<Item> items = items_;
+    Repository<Client> clients = clients_;
+    Repository<Order> orders = orders_;
+    for (const Id item_id : order.item_ids()) {
+        items.remove(item_id);
+    }
+    clients.get(order.client_id()).remove_order_id(order_id);
+    orders.remove(order_id);
+    items_.swap(items);
+    clients_.swap(clients);
+    orders_.swap(orders);
+    publish();
+}
+
 const Client* DryCleaningShop::find_client_by_phone(const std::string& phone) const {
     const std::string key = normalize_phone(phone);
     for (const Client& client : clients_) {
@@ -940,10 +1015,10 @@ void DryCleaningShop::check_material_stock(const std::map<Id, double>& needed) c
 }
 
 void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations,
-                                     const Plan& plan, TimePoint now) const {
+                                     const Plan& plan) const {
     std::map<Id, TimePoint> cursor;
     for (const Machine& machine : machines_) {
-        cursor[machine.id()] = std::max(now + kPlanningDelay, machine.free_at());
+        cursor[machine.id()] = std::max(plan.built_at + kPlanningDelay, machine.free_at());
     }
     for (std::size_t i = 0; i < batches.size(); ++i) {
         TimePoint& slot = cursor[batches[i].machine_id];
@@ -960,6 +1035,9 @@ void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const s
 std::vector<PlannedBatch> DryCleaningShop::verified_batches(const Plan& plan, TimePoint now) const {
     if (plan.source_revision != revision_) {
         throw PlanningException("план устарел: данные изменились после его построения");
+    }
+    if (now - plan.built_at > kPlanLifetime) {
+        throw PlanningException("план построен слишком давно, перестройте его");
     }
     const std::vector<PlanItem> candidates = collect_plan_items(now);
     PlanClaims claims(candidates);
@@ -978,7 +1056,7 @@ std::vector<PlannedBatch> DryCleaningShop::verified_batches(const Plan& plan, Ti
         throw PlanningException("план не охватывает все изделия, ожидающие обработки");
     }
     check_material_stock(needed);
-    check_schedule(result, durations, plan, now);
+    check_schedule(result, durations, plan);
     return result;
 }
 

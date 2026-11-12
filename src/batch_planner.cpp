@@ -10,7 +10,6 @@
 namespace {
 
 constexpr auto kPlanningDelay = std::chrono::minutes(1);
-constexpr double kPercent = 100.0;
 constexpr std::size_t kMinBatchesToMerge = 2;
 
 const Machine* find_machine(const std::vector<Machine>& machines, Id id) {
@@ -286,7 +285,7 @@ void BatchPlanner::evaluate(Plan& plan, const std::vector<PlanItem>& items,
     const std::size_t count = plan.batches.size();
     plan.late_count = late;
     plan.objective = count == 0 ? 0.0 : static_cast<double>(count) + kLateWeight * static_cast<double>(late);
-    plan.average_load = count == 0 ? 0.0 : kPercent * fill_sum / static_cast<double>(count);
+    plan.average_load = count == 0 ? 0.0 : fill_sum / static_cast<double>(count);
 }
 
 bool BatchPlanner::mergeable(const PlannedBatch& first, const PlannedBatch& second, const ConflictGraph& graph,

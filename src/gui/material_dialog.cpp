@@ -38,7 +38,6 @@ MaterialDialog::MaterialDialog(const QString& title, const Material& initial, bo
         make_spin_box(this, kMinConsumption, kMaxConsumption, kConsumptionDecimals, kConsumptionStep, QString(),
                       initial.consumption_per_kg() > 0.0 ? initial.consumption_per_kg() : kDefaultConsumption);
 
-    // единица измерения и остаток задаются только при создании материала
     unit_edit_->setEnabled(is_new);
     stock_edit_->setEnabled(is_new);
 
