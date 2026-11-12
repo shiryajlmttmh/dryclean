@@ -49,3 +49,5 @@ void EmployeesTab::edit_record(Id id) {
         this);
     show_dialog(dialog);
 }
+
+void EmployeesTab::remove_record(Id id) { shop_.remove_employee(id, employee_id_); }

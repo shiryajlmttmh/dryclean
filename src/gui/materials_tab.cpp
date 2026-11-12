@@ -99,14 +99,14 @@ void MaterialsTab::update_buttons() {
 
 void MaterialsTab::add_record() {
     MaterialDialog dialog(
-        QStringLiteral("Новый материал"), Material(), true,
+        QStringLiteral("Новый материал"), Material(), false,
         [this](const Material& material) { shop_.add_material(material, employee_id_); }, this);
     show_dialog(dialog);
 }
 
 void MaterialsTab::edit_record(Id id) {
     MaterialDialog dialog(
-        QStringLiteral("Изменение материала"), shop_.materials().get(id), false,
+        QStringLiteral("Изменение материала"), shop_.materials().get(id), true,
         [this, id](const Material& material) {
             Material updated = material;
             updated.set_id(id);
@@ -115,6 +115,8 @@ void MaterialsTab::edit_record(Id id) {
         this);
     show_dialog(dialog);
 }
+
+void MaterialsTab::remove_record(Id id) { shop_.remove_material(id, employee_id_); }
 
 void MaterialsTab::change_stock(const QString& title, const QString& prompt,
                                 const std::function<void(Id, double)>& apply) {

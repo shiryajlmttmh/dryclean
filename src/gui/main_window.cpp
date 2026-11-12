@@ -41,6 +41,7 @@ constexpr int kAllStatuses = -1;
 constexpr int kOverdueOrders = -2;
 constexpr int kNoRow = -1;
 constexpr double kNoDiscount = 0.0;
+constexpr int kStatusRightMargin = 16;
 constexpr const char* kStatusSeparator = "   |   ";
 
 enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
@@ -85,6 +86,7 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     setCentralWidget(tabs);
 
     status_label_ = new QLabel(this);
+    status_label_->setContentsMargins(0, 0, kStatusRightMargin, 0);
     statusBar()->addPermanentWidget(status_label_);
 
     build_menu();
@@ -158,12 +160,14 @@ QWidget* MainWindow::build_orders_tab() {
     ready_order_button_ = new QPushButton(QStringLiteral("Отметить готовым"), page);
     issue_order_button_ = new QPushButton(QStringLiteral("Выдать клиенту"), page);
     order_items_button_ = new QPushButton(QStringLiteral("Изделия заказа"), page);
+    remove_order_button_ = new QPushButton(QStringLiteral("Удалить заказ"), page);
     toolbar->addWidget(status_filter_);
     toolbar->addStretch(kStretch);
     toolbar->addWidget(order_items_button_);
     toolbar->addWidget(accept_order_button_);
     toolbar->addWidget(ready_order_button_);
     toolbar->addWidget(issue_order_button_);
+    toolbar->addWidget(remove_order_button_);
     layout->addLayout(toolbar);
 
     orders_table_ = new QTableWidget(page);
@@ -176,6 +180,7 @@ QWidget* MainWindow::build_orders_tab() {
     connect(orders_table_, &QTableWidget::cellDoubleClicked, this, &MainWindow::show_order_items);
     connect(ready_order_button_, &QPushButton::clicked, this, &MainWindow::mark_order_ready);
     connect(issue_order_button_, &QPushButton::clicked, this, &MainWindow::issue_order);
+    connect(remove_order_button_, &QPushButton::clicked, this, &MainWindow::remove_order);
     connect(orders_table_, &QTableWidget::itemSelectionChanged, this, &MainWindow::update_order_buttons);
     return page;
 }
@@ -213,8 +218,8 @@ void MainWindow::refresh_clients() {
             set_cell(clients_table_, row, ClientId, QString::number(client.id()), true);
             set_cell(clients_table_, row, ClientName, qt_convert::text(client.name()));
             set_cell(clients_table_, row, ClientPhone, qt_convert::text(client.phone()));
-            set_cell(clients_table_, row, ClientDiscount, qt_convert::text(format_percent(client.discount())), true);
-            set_cell(clients_table_, row, ClientOrders, QString::number(client.orders_count()), true);
+            set_cell(clients_table_, row, ClientDiscount, qt_convert::text(format_percent(client.discount())));
+            set_cell(clients_table_, row, ClientOrders, QString::number(client.orders_count()));
             ++row;
         }
     });
@@ -260,10 +265,12 @@ void MainWindow::update_order_buttons() {
     const Order* order = id ? shop_.orders().find_by_id(*id) : nullptr;
     const bool in_progress = order != nullptr && order->status() == OrderStatus::InProgress;
     const bool ready = order != nullptr && order->status() == OrderStatus::Ready;
+    const bool accepted = order != nullptr && order->status() == OrderStatus::Accepted;
     order_items_button_->setEnabled(order != nullptr);
     accept_order_button_->setEnabled(has_permission(shop_, employee_id_, Permission::AcceptOrders));
     ready_order_button_->setEnabled(in_progress && has_permission(shop_, employee_id_, Permission::ChangeStatus));
     issue_order_button_->setEnabled(ready && has_permission(shop_, employee_id_, Permission::IssueOrders));
+    remove_order_button_->setEnabled(accepted && has_permission(shop_, employee_id_, Permission::AcceptOrders));
 }
 
 void MainWindow::show_order_items() {
@@ -288,6 +295,20 @@ void MainWindow::mark_order_ready() {
 void MainWindow::issue_order() {
     const std::optional<Id> id = selected_id(orders_table_, OrderId);
     if (id && run_guarded(this, [&] { shop_.issue_order(*id, employee_id_, qt_convert::now()); })) {
+        refresh();
+    }
+}
+
+void MainWindow::remove_order() {
+    const std::optional<Id> id = selected_id(orders_table_, OrderId);
+    if (!id) {
+        return;
+    }
+    const QString question = QStringLiteral("Удалить заказ №%1 вместе с его изделиями?").arg(*id);
+    if (!confirm(this, QStringLiteral("Удаление заказа"), question)) {
+        return;
+    }
+    if (run_guarded(this, [this, id] { shop_.remove_order(*id, employee_id_); })) {
         refresh();
     }
 }
@@ -342,9 +363,7 @@ void MainWindow::remove_client() {
         return;
     }
     const QString name = qt_convert::text(shop_.clients().get(*id).name());
-    const auto answer = QMessageBox::question(this, QStringLiteral("Удаление клиента"),
-                                              QStringLiteral("Удалить клиента «%1»?").arg(name));
-    if (answer != QMessageBox::Yes) {
+    if (!confirm(this, QStringLiteral("Удаление клиента"), QStringLiteral("Удалить клиента «%1»?").arg(name))) {
         return;
     }
     if (run_guarded(this, [this, id] { shop_.remove_client(*id, employee_id_); })) {

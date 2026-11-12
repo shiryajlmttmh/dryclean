@@ -30,6 +30,7 @@ protected:
     virtual void fill(QTableWidget* table) = 0;
     virtual void add_record() = 0;
     virtual void edit_record(Id id) = 0;
+    virtual void remove_record(Id id) = 0;
     virtual void update_buttons();
 
     void show_dialog(QDialog& dialog);
@@ -43,9 +44,11 @@ protected:
 
 private slots:
     void edit_selected();
+    void remove_selected();
 
 private:
     Permission permission_;
     QPushButton* add_button_;
     QPushButton* edit_button_;
+    QPushButton* remove_button_;
 };

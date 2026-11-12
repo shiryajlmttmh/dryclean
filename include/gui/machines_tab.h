@@ -10,4 +10,5 @@ protected:
     void fill(QTableWidget* table) override;
     void add_record() override;
     void edit_record(Id id) override;
+    void remove_record(Id id) override;
 };

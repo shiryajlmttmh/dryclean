@@ -16,8 +16,10 @@ TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission,
     toolbar_->addStretch(kStretch);
     add_button_ = new QPushButton(QStringLiteral("Добавить"), this);
     edit_button_ = new QPushButton(QStringLiteral("Изменить"), this);
+    remove_button_ = new QPushButton(QStringLiteral("Удалить"), this);
     toolbar_->addWidget(add_button_);
     toolbar_->addWidget(edit_button_);
+    toolbar_->addWidget(remove_button_);
 
     table_ = new QTableWidget(this);
     configure_table(table_, headers);
@@ -28,6 +30,7 @@ TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission,
 
     connect(add_button_, &QPushButton::clicked, this, &TableTab::add_record);
     connect(edit_button_, &QPushButton::clicked, this, &TableTab::edit_selected);
+    connect(remove_button_, &QPushButton::clicked, this, &TableTab::remove_selected);
     connect(table_, &QTableWidget::cellDoubleClicked, this, &TableTab::edit_selected);
     connect(table_, &QTableWidget::itemSelectionChanged, this, &TableTab::update_buttons);
 }
@@ -44,12 +47,26 @@ std::optional<Id> TableTab::selected() const { return selected_id(table_, kIdCol
 void TableTab::update_buttons() {
     add_button_->setEnabled(is_allowed());
     edit_button_->setEnabled(is_allowed() && selected().has_value());
+    remove_button_->setEnabled(is_allowed() && selected().has_value());
 }
 
 void TableTab::edit_selected() {
     const std::optional<Id> id = selected();
     if (id && is_allowed()) {
         edit_record(*id);
+    }
+}
+
+void TableTab::remove_selected() {
+    const std::optional<Id> id = selected();
+    if (!id || !is_allowed()) {
+        return;
+    }
+    if (!confirm(this, QStringLiteral("Удаление"), QStringLiteral("Удалить выбранную запись?"))) {
+        return;
+    }
+    if (run_guarded(this, [this, id] { remove_record(*id); })) {
+        emit changed();
     }
 }
 

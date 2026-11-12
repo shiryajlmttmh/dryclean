@@ -42,6 +42,10 @@ bool run_guarded(QWidget* parent, const std::function<void()>& action) {
     return false;
 }
 
+bool confirm(QWidget* parent, const QString& title, const QString& text) {
+    return QMessageBox::question(parent, title, text) == QMessageBox::Yes;
+}
+
 bool has_permission(const DryCleaningShop& shop, Id employee_id, Permission permission) {
     const Employee* employee = shop.employees().find_by_id(employee_id);
     return employee != nullptr && employee->has_permission(permission);

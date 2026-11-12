@@ -17,6 +17,7 @@ class QTableWidget;
 class QWidget;
 
 bool run_guarded(QWidget* parent, const std::function<void()>& action);
+bool confirm(QWidget* parent, const QString& title, const QString& text);
 bool has_permission(const DryCleaningShop& shop, Id employee_id, Permission permission);
 std::optional<Id> selected_id(const QTableWidget* table, int id_column);
 void set_row_position(QTableWidget* table, int row, std::size_t position);

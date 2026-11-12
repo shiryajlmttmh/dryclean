@@ -33,6 +33,7 @@ private slots:
     void accept_order();
     void mark_order_ready();
     void issue_order();
+    void remove_order();
     void show_order_items();
     void update_order_buttons();
     void add_client();
@@ -59,6 +60,7 @@ private:
     QPushButton* accept_order_button_ = nullptr;
     QPushButton* ready_order_button_ = nullptr;
     QPushButton* issue_order_button_ = nullptr;
+    QPushButton* remove_order_button_ = nullptr;
     QPushButton* order_items_button_ = nullptr;
     PlanningTab* planning_tab_ = nullptr;
     BatchesTab* batches_tab_ = nullptr;

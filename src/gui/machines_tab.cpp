@@ -55,3 +55,5 @@ void MachinesTab::edit_record(Id id) {
         this);
     show_dialog(dialog);
 }
+
+void MachinesTab::remove_record(Id id) { shop_.remove_machine(id, employee_id_); }
