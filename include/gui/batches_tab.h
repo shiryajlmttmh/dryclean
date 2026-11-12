@@ -4,6 +4,7 @@
 
 #include "shop.h"
 
+class QComboBox;
 class QPushButton;
 class QTableWidget;
 
@@ -24,8 +25,11 @@ private slots:
     void update_buttons();
 
 private:
+    void fill_row(int row, const Batch& batch, TimePoint now);
+
     DryCleaningShop& shop_;
     Id employee_id_;
+    QComboBox* filter_box_;
     QPushButton* complete_button_;
     QTableWidget* table_;
 };

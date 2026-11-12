@@ -13,6 +13,7 @@ class BatchesTab;
 class PlanningTab;
 class QPushButton;
 class QTabWidget;
+class MachinesTab;
 class TableTab;
 class QTableWidget;
 
@@ -28,6 +29,7 @@ protected:
 private slots:
     void save();
     void refresh();
+    void refresh_clock_views();
     void refresh_clients();
     void refresh_orders();
     void accept_order();
@@ -64,6 +66,7 @@ private:
     QPushButton* order_items_button_ = nullptr;
     PlanningTab* planning_tab_ = nullptr;
     BatchesTab* batches_tab_ = nullptr;
+    MachinesTab* machines_tab_ = nullptr;
     std::vector<TableTab*> record_tabs_;
     QTableWidget* orders_table_ = nullptr;
     QLabel* status_label_ = nullptr;

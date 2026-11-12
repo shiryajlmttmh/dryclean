@@ -13,6 +13,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QTimer>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -42,6 +43,7 @@ constexpr int kOverdueOrders = -2;
 constexpr int kNoRow = -1;
 constexpr double kNoDiscount = 0.0;
 constexpr int kStatusRightMargin = 16;
+constexpr int kClockRefreshMs = 30000;
 constexpr const char* kStatusSeparator = "   |   ";
 
 enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
@@ -79,7 +81,8 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     tabs->addTab(planning_tab_, QStringLiteral("Планирование"));
     tabs->addTab(batches_tab_, QStringLiteral("Партии"));
     add_record_tab(tabs, new MaterialsTab(shop_, employee_id_, this), QStringLiteral("Склад"));
-    add_record_tab(tabs, new MachinesTab(shop_, employee_id_, this), QStringLiteral("Оборудование"));
+    machines_tab_ = new MachinesTab(shop_, employee_id_, this);
+    add_record_tab(tabs, machines_tab_, QStringLiteral("Оборудование"));
     add_record_tab(tabs, new EmployeesTab(shop_, employee_id_, this), QStringLiteral("Сотрудники"));
     connect(planning_tab_, &PlanningTab::changed, this, &MainWindow::refresh);
     connect(batches_tab_, &BatchesTab::changed, this, &MainWindow::refresh);
@@ -91,6 +94,10 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     build_menu();
     refresh();
+
+    auto* clock_timer = new QTimer(this);
+    connect(clock_timer, &QTimer::timeout, this, &MainWindow::refresh_clock_views);
+    clock_timer->start(kClockRefreshMs);
 }
 
 void MainWindow::add_record_tab(QTabWidget* tabs, TableTab* tab, const QString& title) {
@@ -199,6 +206,12 @@ void MainWindow::refresh() {
         tab->refresh();
     }
     update_status();
+}
+
+void MainWindow::refresh_clock_views() {
+    batches_tab_->refresh();
+    machines_tab_->refresh();
+    refresh_orders();
 }
 
 void MainWindow::update_client_buttons() {
