@@ -30,6 +30,20 @@ Hours base_hours(ServiceType service) {
     throw InvalidInputException("ServiceType", "неизвестное значение");
 }
 
+Hours cycle_hours(ServiceType service) {
+    switch (service) {
+        case ServiceType::DryCleaning:
+            return 3.0;
+        case ServiceType::WetCleaning:
+            return 4.0;
+        case ServiceType::StainRemoval:
+            return 2.0;
+        case ServiceType::Leather:
+            return 8.0;
+    }
+    throw InvalidInputException("ServiceType", "неизвестное значение");
+}
+
 double material_cost_k(MaterialGroup group) {
     switch (group) {
         case MaterialGroup::Basic:

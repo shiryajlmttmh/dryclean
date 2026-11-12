@@ -12,6 +12,7 @@ constexpr double kStainRemovalSoilK = 1.0;
 
 double tariff(ServiceType service);
 Hours base_hours(ServiceType service);
+Hours cycle_hours(ServiceType service);
 double material_cost_k(MaterialGroup group);
 double material_time_k(MaterialGroup group);
 double soil_k(SoilLevel level);

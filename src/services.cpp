@@ -51,6 +51,11 @@ Hours Service::compute_duration(const Item& item, bool urgent) const {
            (base_hours(type()) * material_time_k(item.material_group()) + stain_hours);
 }
 
+Hours Service::calculate_processing(const Item& item, bool urgent) const {
+    require_applicable(item);
+    return urgency_time_k(urgent) * cycle_hours(type()) * material_time_k(item.material_group());
+}
+
 ServiceType DryCleaningService::type() const noexcept { return ServiceType::DryCleaning; }
 
 std::string DryCleaningService::name() const { return "Сухая (химическая) чистка"; }

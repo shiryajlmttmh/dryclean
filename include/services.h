@@ -16,6 +16,8 @@ public:
     virtual double calculate_cost(const Item& item, bool urgent, double client_discount) const = 0;
     virtual Hours calculate_duration(const Item& item, bool urgent) const = 0;
 
+    Hours calculate_processing(const Item& item, bool urgent) const;
+
     static double round_money(double amount);
 
 protected:

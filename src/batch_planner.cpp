@@ -30,22 +30,23 @@ std::map<Id, const PlanItem*> index_items(const std::vector<PlanItem>& items) {
 }
 
 std::map<Id, std::optional<TimePoint>> order_ready_times(const Plan& plan, const std::vector<PlanItem>& items) {
-    std::map<Id, Id> order_of;
+    std::map<Id, const PlanItem*> by_id;
     std::map<Id, std::optional<TimePoint>> ready;
     for (const PlanItem& item : items) {
-        order_of[item.item_id] = item.order_id;
+        by_id[item.item_id] = &item;
         ready.emplace(item.order_id, TimePoint{});
     }
     for (const PlannedBatch& batch : plan.batches) {
         for (const Id id : batch.item_ids) {
-            std::optional<TimePoint>& slot = ready[order_of[id]];
+            const PlanItem& item = *by_id[id];
+            std::optional<TimePoint>& slot = ready[item.order_id];
             if (slot) {
-                slot = std::max(*slot, batch.planned_ready_at);
+                slot = std::max(*slot, add_hours(batch.planned_ready_at, item.finishing));
             }
         }
     }
     for (const auto& entry : plan.unplaced) {
-        ready[order_of[entry.first]] = std::nullopt;
+        ready[by_id[entry.first]->order_id] = std::nullopt;
     }
     return ready;
 }
@@ -156,7 +157,7 @@ ConflictGraph BatchPlanner::build_conflict_graph(const std::vector<PlanItem>& it
 }
 
 Hours BatchPlanner::compute_slack(const PlanItem& item, TimePoint now) const {
-    return hours_between(item.deadline, now) - item.duration;
+    return hours_between(item.deadline, now) - item.duration - item.finishing;
 }
 
 double BatchPlanner::compute_priority(const PlanItem& item, TimePoint now) const {
@@ -273,7 +274,7 @@ void BatchPlanner::evaluate(Plan& plan, const std::vector<PlanItem>& items,
                 continue;
             }
             weight += found->second->weight_kg;
-            if (batch.planned_ready_at > found->second->deadline) {
+            if (add_hours(batch.planned_ready_at, found->second->finishing) > found->second->deadline) {
                 ++late;
             }
         }

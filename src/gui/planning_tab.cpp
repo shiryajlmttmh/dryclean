@@ -33,7 +33,7 @@ enum BatchColumn {
 };
 
 constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{"Машина", "Услуга", "Изделия", "Масса, кг",
-                                                                  "Загрузка", "Начало", "Готовность"};
+                                                                  "Загрузка", "Начало", "Конец обработки"};
 
 enum UnplacedColumn { UnplacedItem, UnplacedReason, UnplacedColumnCount };
 

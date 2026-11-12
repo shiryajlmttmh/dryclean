@@ -18,6 +18,7 @@ struct PlanItem {
     ColorGroup color_group = ColorGroup::Light;
     double weight_kg = 0.0;
     Hours duration = 0.0;
+    Hours finishing = 0.0;
     TimePoint deadline{};
     double priority = 0.0;
     std::size_t degree = 0;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <cmath>
 #include <limits>
@@ -289,8 +290,11 @@ void load_file(Repository<T>& repository, const std::filesystem::path& directory
 constexpr const char* kInitialAdminName = "Администратор";
 constexpr const char* kInitialAdminLogin = "admin";
 
+using FinishingHours = std::function<Hours(const Item&, const Order&)>;
+
 void advance_orders(Repository<Order>& orders, const Repository<Item>& items, const Repository<Batch>& batches,
-                    const std::set<Id>& touched_orders, Id acting_employee, TimePoint now) {
+                    const std::set<Id>& touched_orders, const FinishingHours& finishing, Id acting_employee,
+                    TimePoint now) {
     for (const Id order_id : touched_orders) {
         Order& order = orders.get(order_id);
         if (order.status() == OrderStatus::Accepted) {
@@ -303,7 +307,7 @@ void advance_orders(Repository<Order>& orders, const Repository<Item>& items, co
                 ready = std::nullopt;
                 break;
             }
-            ready = std::max(*ready, batches.get(item.batch_id()).planned_ready_at());
+            ready = std::max(*ready, add_hours(batches.get(item.batch_id()).planned_ready_at(), finishing(item, order)));
         }
         order.set_planned_ready_at(ready);
         order.validate();
@@ -900,12 +904,19 @@ std::vector<PlanItem> DryCleaningShop::collect_plan_items(TimePoint now) const {
         plan_item.fabric_group = item.fabric_group();
         plan_item.color_group = item.color_group();
         plan_item.weight_kg = item.weight_kg();
-        plan_item.duration = service(order->service_type()).calculate_duration(item, order->is_urgent());
+        plan_item.duration = service(order->service_type()).calculate_processing(item, order->is_urgent());
+        plan_item.finishing = finishing_hours(item, *order);
         plan_item.deadline = order->deadline();
         plan_item.priority = planner_.compute_priority(plan_item, now);
         result.push_back(plan_item);
     }
     return result;
+}
+
+Hours DryCleaningShop::finishing_hours(const Item& item, const Order& order) const {
+    const Service& selected = service(order.service_type());
+    const Hours turnaround = selected.calculate_duration(item, order.is_urgent());
+    return std::max(0.0, turnaround - selected.calculate_processing(item, order.is_urgent()));
 }
 
 Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
@@ -920,7 +931,9 @@ Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
         for (const Id item_id : orders_.get(entry.first).item_ids()) {
             const Item& item = items_.get(item_id);
             if (item.is_batched()) {
-                entry.second = std::max(*entry.second, batches_.get(item.batch_id()).planned_ready_at());
+                entry.second = std::max(
+                    *entry.second,
+                    add_hours(batches_.get(item.batch_id()).planned_ready_at(), finishing_hours(item, orders_.get(entry.first))));
             }
         }
     }
@@ -1100,7 +1113,10 @@ std::vector<Id> DryCleaningShop::confirm_plan(const Plan& plan, Id acting_employ
     for (const auto& entry : consumption) {
         materials.get(entry.first).write_off(entry.second);
     }
-    advance_orders(orders, items, batches, touched_orders, acting_employee, now);
+    const FinishingHours finishing = [this](const Item& item, const Order& order) {
+        return finishing_hours(item, order);
+    };
+    advance_orders(orders, items, batches, touched_orders, finishing, acting_employee, now);
 
     batches_.swap(batches);
     items_.swap(items);
@@ -1152,7 +1168,7 @@ void DryCleaningShop::check_batch(const Batch& batch, const Repository<Item>& it
             throw IntegrityException("услуга заказа не совпадает с услугой партии");
         }
         weight += item->weight_kg();
-        longest = std::max(longest, service(order.service_type()).calculate_duration(*item, order.is_urgent()));
+        longest = std::max(longest, service(order.service_type()).calculate_processing(*item, order.is_urgent()));
     }
     if (std::abs(weight - batch.total_weight_kg()) > EPS) {
         throw IntegrityException("масса партии не совпадает с массой изделий");
