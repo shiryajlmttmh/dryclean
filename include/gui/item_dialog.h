@@ -41,6 +41,7 @@ private:
     QDoubleSpinBox* weight_edit_;
     QComboBox* soil_box_;
     QComboBox* service_box_;
+    QListWidget* services_list_;
     QLineEdit* notes_edit_;
     QListWidget* defects_list_;
     QComboBox* defect_type_box_;

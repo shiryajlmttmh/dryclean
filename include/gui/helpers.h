@@ -26,6 +26,7 @@ std::optional<std::size_t> selected_position(const QTableWidget* table, std::siz
 void add_positioned_item(QListWidget* list, const QString& text, std::size_t position);
 std::optional<std::size_t> selected_position(const QListWidget* list, std::size_t count);
 QString item_tag(const DryCleaningShop& shop, Id item_id);
+QString item_services_text(const Item& item);
 QString item_tags(const DryCleaningShop& shop, const std::vector<Id>& item_ids);
 QString machine_name(const DryCleaningShop& shop, Id machine_id);
 QWidget* make_titled_box(const QString& title, QWidget* content, QWidget* parent);

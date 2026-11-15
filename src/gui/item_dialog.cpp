@@ -97,7 +97,43 @@ void ItemDialog::build_item_form(QFormLayout* form, const Item& initial) {
     service_box_ = new QComboBox(this);
     fill_enum_combo<ServiceType>(service_box_, {ServiceType::DryCleaning, ServiceType::WetCleaning,
                                                ServiceType::StainRemoval, ServiceType::Leather});
-    select_enum(service_box_, initial.service_type());
+    services_list_ = new QListWidget(this);
+    services_list_->setMaximumHeight(kListHeight);
+    for (ServiceType type : initial.services()) {
+        auto* entry = new QListWidgetItem(qt_convert::text(display_name(type)), services_list_);
+        entry->setData(Qt::UserRole, static_cast<int>(type));
+    }
+    auto* add_service = new QPushButton(QStringLiteral("Добавить"), this);
+    auto* remove_service = new QPushButton(QStringLiteral("Удалить"), this);
+    auto* move_up = new QPushButton(QStringLiteral("Выше"), this);
+    auto* move_down = new QPushButton(QStringLiteral("Ниже"), this);
+    auto* service_buttons = new QHBoxLayout;
+    service_buttons->addWidget(add_service);
+    service_buttons->addWidget(remove_service);
+    service_buttons->addWidget(move_up);
+    service_buttons->addWidget(move_down);
+    connect(add_service, &QPushButton::clicked, this, [this] {
+        auto* entry = new QListWidgetItem(service_box_->currentText(), services_list_);
+        entry->setData(Qt::UserRole, static_cast<int>(enum_value<ServiceType>(service_box_)));
+        services_list_->setCurrentItem(entry);
+    });
+    connect(remove_service, &QPushButton::clicked, this, [this] {
+        delete services_list_->takeItem(services_list_->currentRow());
+    });
+    connect(move_up, &QPushButton::clicked, this, [this] {
+        const int row = services_list_->currentRow();
+        if (row <= 0) return;
+        auto* entry = services_list_->takeItem(row);
+        services_list_->insertItem(row - 1, entry);
+        services_list_->setCurrentItem(entry);
+    });
+    connect(move_down, &QPushButton::clicked, this, [this] {
+        const int row = services_list_->currentRow();
+        if (row < 0 || row + 1 >= services_list_->count()) return;
+        auto* entry = services_list_->takeItem(row);
+        services_list_->insertItem(row + 1, entry);
+        services_list_->setCurrentItem(entry);
+    });
 
     weight_edit_ = new QDoubleSpinBox(this);
     weight_edit_->setRange(kMinWeightKg, kMaxWeightKg);
@@ -108,6 +144,8 @@ void ItemDialog::build_item_form(QFormLayout* form, const Item& initial) {
 
     form->addRow(QStringLiteral("Изделие:"), kind_edit_);
     form->addRow(QStringLiteral("Услуга:"), service_box_);
+    form->addRow(QStringLiteral("Порядок обработки:"), services_list_);
+    form->addRow(service_buttons);
     form->addRow(QStringLiteral("Материал:"), material_edit_);
     form->addRow(QStringLiteral("Группа материала:"), material_group_box_);
     form->addRow(QStringLiteral("Группа ткани:"), fabric_group_box_);
@@ -192,7 +230,11 @@ Item ItemDialog::build_item() const {
                color_edit_->text().toStdString(), enum_value<ColorGroup>(color_group_box_), weight_edit_->value(),
                enum_value<SoilLevel>(soil_box_));
     built.set_condition_notes(notes_edit_->text().toStdString());
-    built.set_service_type(enum_value<ServiceType>(service_box_));
+    std::vector<ServiceType> services;
+    for (int row = 0; row < services_list_->count(); ++row) {
+        services.push_back(static_cast<ServiceType>(services_list_->item(row)->data(Qt::UserRole).toInt()));
+    }
+    built.set_services(std::move(services));
     for (const Item::Defect& defect : defects_) {
         built.add_defect(defect);
     }

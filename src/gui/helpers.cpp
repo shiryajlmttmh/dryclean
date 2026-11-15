@@ -10,6 +10,7 @@
 #include <QVBoxLayout>
 
 #include "exceptions.h"
+#include "display.h"
 #include "gui/qt_convert.h"
 
 namespace {
@@ -89,6 +90,12 @@ void add_positioned_item(QListWidget* list, const QString& text, std::size_t pos
 std::optional<std::size_t> selected_position(const QListWidget* list, std::size_t count) {
     const QListWidgetItem* item = list->currentItem();
     return item == nullptr ? std::nullopt : stored_position(item->data(kPositionRole), count);
+}
+
+QString item_services_text(const Item& item) {
+    QStringList names;
+    for (ServiceType type : item.services()) names << qt_convert::text(display_name(type));
+    return names.join(QStringLiteral(" → "));
 }
 
 QString item_tag(const DryCleaningShop& shop, Id item_id) {

@@ -106,6 +106,9 @@ private:
     std::size_t administrators_count() const;
     bool has_employee_records(Id employee_id) const;
     Hours finishing_hours(const Item& item, const Order& order) const;
+    const Service& applicable_service(ServiceType type, const Item& item) const;
+    double item_cost(const Item& item, bool urgent, double discount) const;
+    Hours item_duration(const Item& item, bool urgent) const;
     bool has_scheduled_batch(Id machine_id) const;
     class PlanClaims {
     public:

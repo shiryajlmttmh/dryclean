@@ -1,6 +1,8 @@
 #include "item.h"
 
 #include <cmath>
+#include <algorithm>
+#include <set>
 #include <iomanip>
 #include <istream>
 #include <locale>
@@ -190,13 +192,35 @@ void Item::set_condition_notes(std::string condition_notes) {
 
 void Item::set_batch_id(Id batch_id) noexcept { batch_id_ = batch_id; }
 
-ServiceType Item::service_type() const noexcept { return service_type_; }
+ServiceType Item::service_type() const noexcept {
+    return services_[std::min(completed_batches_.size(), services_.size() - 1)];
+}
 
-void Item::set_service_type(ServiceType type) {
-    if (!is_valid(type)) {
-        throw InvalidInputException("service_type", "неизвестный вид услуги");
+const std::vector<ServiceType>& Item::services() const noexcept { return services_; }
+
+const std::vector<Id>& Item::completed_batches() const noexcept { return completed_batches_; }
+
+bool Item::services_completed() const noexcept { return completed_batches_.size() == services_.size(); }
+
+bool Item::is_last_service() const noexcept { return completed_batches_.size() + 1 >= services_.size(); }
+
+void Item::set_services(std::vector<ServiceType> services) {
+    if (is_batched() || !completed_batches_.empty()) {
+        throw InvalidInputException("services", "нельзя менять услуги изделия в обработке");
     }
-    service_type_ = type;
+    if (services.empty() || services.size() > kMaxNestedElements ||
+        std::any_of(services.begin(), services.end(), [](ServiceType type) { return !is_valid(type); })) {
+        throw InvalidInputException("services", "задайте последовательность допустимых услуг");
+    }
+    services_ = std::move(services);
+}
+
+void Item::complete_service() {
+    if (!is_batched() || services_completed()) {
+        throw InvalidInputException("services", "нет услуги для завершения");
+    }
+    completed_batches_.push_back(batch_id_);
+    if (!services_completed()) batch_id_ = 0;
 }
 
 void Item::add_defect(Defect defect) {
@@ -231,8 +255,22 @@ std::string Item::make_tag(Id order_id, std::size_t index) {
 }
 
 void Item::validate() const {
-    if (!is_valid(service_type_)) {
-        throw InvalidInputException("service_type", "неизвестный вид услуги");
+    if (services_.empty() || services_.size() > kMaxNestedElements ||
+        std::any_of(services_.begin(), services_.end(), [](ServiceType type) { return !is_valid(type); }) ||
+        completed_batches_.size() > services_.size()) {
+        throw InvalidInputException("services", "некорректная последовательность услуг");
+    }
+    std::set<Id> completed;
+    for (Id id : completed_batches_) {
+        if (id == 0 || !completed.insert(id).second) {
+            throw InvalidInputException("services", "некорректные завершённые партии изделия");
+        }
+    }
+    if (services_completed() && batch_id_ != completed_batches_.back()) {
+        throw InvalidInputException("services", "не совпадает последняя партия изделия");
+    }
+    if (!services_completed() && completed.contains(batch_id_)) {
+        throw InvalidInputException("services", "текущая партия изделия уже завершена");
     }
     check_optional_text("tag", tag_);
     require_text("kind", kind_);
@@ -271,7 +309,10 @@ std::ostream& operator<<(std::ostream& os, const Item& item) {
     }
     writer.put_string(item.condition_notes_);
     writer.put_id(item.batch_id_);
-    writer.put_token(to_string(item.service_type_));
+    writer.put_count(item.services_.size());
+    for (ServiceType type : item.services_) writer.put_token(to_string(type));
+    writer.put_count(item.completed_batches_.size());
+    for (Id id : item.completed_batches_) writer.put_id(id);
     return os << writer.str();
 }
 
@@ -294,7 +335,11 @@ std::istream& operator>>(std::istream& is, Item& item) {
         }
         value.condition_notes_ = reader.get_string();
         value.batch_id_ = reader.get_id();
-        value.service_type_ = parse_ServiceType(reader.get_token());
+        value.services_.clear();
+        const auto service_count = reader.get_count();
+        for (std::size_t i = 0; i < service_count; ++i) value.services_.push_back(parse_ServiceType(reader.get_token()));
+        const auto completed_count = reader.get_count();
+        for (std::size_t i = 0; i < completed_count; ++i) value.completed_batches_.push_back(reader.get_id());
     });
 }
 

@@ -39,7 +39,12 @@ public:
     const std::string& condition_notes() const noexcept;
     Id batch_id() const noexcept;
     ServiceType service_type() const noexcept;
-    void set_service_type(ServiceType type);
+    const std::vector<ServiceType>& services() const noexcept;
+    const std::vector<Id>& completed_batches() const noexcept;
+    void set_services(std::vector<ServiceType> services);
+    void complete_service();
+    bool services_completed() const noexcept;
+    bool is_last_service() const noexcept;
 
     void set_id(Id id) noexcept;
     void set_order_id(Id order_id) noexcept;
@@ -80,7 +85,8 @@ private:
     std::vector<Defect> defects_;
     std::string condition_notes_;
     Id batch_id_ = 0;
-    ServiceType service_type_ = ServiceType::DryCleaning;
+    std::vector<ServiceType> services_{ServiceType::DryCleaning};
+    std::vector<Id> completed_batches_;
 };
 
 std::ostream& operator<<(std::ostream& os, const Item::Defect& defect);

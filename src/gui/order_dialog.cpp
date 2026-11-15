@@ -154,7 +154,7 @@ void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
         set_cell(items_table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
         set_cell(items_table_, row, ItemStains, QString::number(item.stain_count()), true);
         set_cell(items_table_, row, ItemCost, cost, true);
-        set_cell(items_table_, row, ItemService, qt_convert::text(display_name(item.service_type())));
+        set_cell(items_table_, row, ItemService, item_services_text(item));
         set_row_position(items_table_, row, index);
         if (selected == index) {
             items_table_->selectRow(row);

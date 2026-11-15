@@ -33,11 +33,12 @@ enum ItemColumn {
     ItemStains,
     ItemCost,
     ItemService,
+    ItemProgress,
     ItemColumnCount
 };
 
 constexpr std::array<const char*, ItemColumnCount> kItemHeaders{"№", "Метка", "Изделие", "Материал", "Цвет",
-                                                                "Масса, кг", "Загрязнение", "Пятен", "Цена", "Услуга"};
+                                                                "Масса, кг", "Загрязнение", "Пятен", "Цена", "Услуги", "Выполнено этапов"};
 
 }
 
@@ -103,7 +104,9 @@ void OrderItemsDialog::refresh() {
         set_cell(table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
         set_cell(table_, row, ItemStains, QString::number(item.stain_count()), true);
         set_cell(table_, row, ItemCost, qt_convert::text(format_money(shop_.calculate_item_cost(id))), true);
-        set_cell(table_, row, ItemService, qt_convert::text(display_name(item.service_type())));
+        set_cell(table_, row, ItemService, item_services_text(item));
+        set_cell(table_, row, ItemProgress,
+                 QStringLiteral("%1 из %2").arg(item.completed_batches().size()).arg(item.services().size()));
         if (selected == id) {
             table_->selectRow(row);
         }

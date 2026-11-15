@@ -278,8 +278,10 @@ void MainWindow::refresh_orders() {
             set_cell(orders_table_, row, OrderClient, client_name);
             QStringList services;
             for (Id item_id : order.item_ids()) {
-                const QString name = qt_convert::text(display_name(shop_.items().get(item_id).service_type()));
-                if (!services.contains(name)) services << name;
+                for (ServiceType type : shop_.items().get(item_id).services()) {
+                    const QString name = qt_convert::text(display_name(type));
+                    if (!services.contains(name)) services << name;
+                }
             }
             set_cell(orders_table_, row, OrderService, services.join(QStringLiteral(", ")));
             set_cell(orders_table_, row, OrderUrgent, order.is_urgent() ? QStringLiteral("Да") : QStringLiteral("Нет"));

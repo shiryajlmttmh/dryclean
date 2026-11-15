@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "exceptions.h"
+#include "display.h"
 #include "normalize.h"
 #include "record_io.h"
 
@@ -82,6 +83,7 @@ OrderProgress check_order_items(const Order& order, const Repository<Item>& item
             throw IntegrityException("повторяющаяся метка изделия");
         }
         if (!item->is_batched()) {
+            if (!item->completed_batches().empty()) ++progress.batched;
             progress.all_completed = false;
             continue;
         }
@@ -90,7 +92,7 @@ OrderProgress check_order_items(const Order& order, const Repository<Item>& item
         if (batch == nullptr || !batch->contains_item(item->id())) {
             throw IntegrityException("партия изделия отсутствует или не содержит изделие");
         }
-        if (batch->status() != BatchStatus::Completed || !batch->completed_at()) {
+        if (!item->services_completed() || batch->status() != BatchStatus::Completed || !batch->completed_at()) {
             progress.all_completed = false;
         } else {
             progress.latest_completion = std::max(progress.latest_completion, *batch->completed_at());
@@ -147,12 +149,25 @@ void check_items(const Repository<Item>& items, const Repository<Order>& orders,
         if (order == nullptr || !order->contains_item(item.id())) {
             throw IntegrityException("изделие не входит в свой заказ");
         }
+        TimePoint previous_completion{};
+        for (Id batch_id : item.completed_batches()) {
+            const Batch* completed = batches.find_by_id(batch_id);
+            if (completed == nullptr || !completed->contains_item(item.id()) || !completed->completed_at() ||
+                completed->status() != BatchStatus::Completed ||
+                completed->planned_start_at() < previous_completion) {
+                throw IntegrityException("нарушен порядок завершённых услуг изделия");
+            }
+            previous_completion = *completed->completed_at();
+        }
         if (!item.is_batched()) {
             continue;
         }
         const Batch* batch = batches.find_by_id(item.batch_id());
         if (batch == nullptr || !batch->contains_item(item.id())) {
             throw IntegrityException("изделие ссылается на партию, которая его не содержит");
+        }
+        if (!item.services_completed() && batch->planned_start_at() < previous_completion) {
+            throw IntegrityException("услуга изделия начинается раньше завершения предыдущей");
         }
     }
 }
@@ -303,7 +318,7 @@ void advance_orders(Repository<Order>& orders, const Repository<Item>& items, co
         std::optional<TimePoint> ready = TimePoint{};
         for (const Id item_id : order.item_ids()) {
             const Item& item = items.get(item_id);
-            if (!item.is_batched()) {
+            if (!item.is_batched() || !item.is_last_service()) {
                 ready = std::nullopt;
                 break;
             }
@@ -742,16 +757,13 @@ OrderQuote DryCleaningShop::quote_order(const OrderDraft& draft, TimePoint now) 
     OrderQuote quote;
     quote.discount = client.discount();
     for (const Item& item : draft.items) {
-        if (item.id() != 0 || item.order_id() != 0 || item.batch_id() != 0 || !item.tag().empty()) {
+        if (item.id() != 0 || item.order_id() != 0 || item.batch_id() != 0 || !item.tag().empty() ||
+            !item.completed_batches().empty()) {
             throw InvalidInputException("items", "изделие черновика не должно иметь служебных полей");
         }
         item.validate();
-        const Service& selected = service(item.service_type());
-        if (!selected.is_applicable(item)) {
-            throw InvalidInputException("items", "изделие не подходит для выбранной услуги");
-        }
-        quote.item_costs.push_back(selected.calculate_cost(item, draft.urgent, client.discount()));
-        quote.item_durations.push_back(selected.calculate_duration(item, draft.urgent));
+        quote.item_costs.push_back(item_cost(item, draft.urgent, client.discount()));
+        quote.item_durations.push_back(item_duration(item, draft.urgent));
     }
     double total = 0.0;
     for (const double cost : quote.item_costs) {
@@ -809,7 +821,7 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     }
 
     Item updated = current;
-    updated.set_service_type(item.service_type());
+    updated.set_services(item.services());
     updated.set_kind(item.kind());
     updated.set_material(item.material_name(), item.material_group(), item.fabric_group());
     updated.set_color(item.color_name(), item.color_group());
@@ -824,18 +836,12 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     }
     updated.validate();
 
-    const Service& selected = service(updated.service_type());
-    if (!selected.is_applicable(updated)) {
-        throw InvalidInputException("item", "изделие не подходит для услуги заказа");
-    }
-
     double total = 0.0;
     Hours nominal = 0.0;
     for (const Id id : order.item_ids()) {
         const Item& member = id == updated.id() ? updated : items_.get(id);
-        const Service& member_service = service(member.service_type());
-        total += member_service.calculate_cost(member, order.is_urgent(), order.discount_snapshot());
-        nominal = std::max(nominal, member_service.calculate_duration(member, order.is_urgent()));
+        total += item_cost(member, order.is_urgent(), order.discount_snapshot());
+        nominal = std::max(nominal, item_duration(member, order.is_urgent()));
     }
 
     Order changed = order;
@@ -853,10 +859,35 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     publish();
 }
 
+const Service& DryCleaningShop::applicable_service(ServiceType type, const Item& item) const {
+    const Service& selected = service(type);
+    if (!selected.is_applicable(item)) {
+        throw InvalidInputException("services", "изделие не подходит для услуги «" + display_name(type) + "»");
+    }
+    return selected;
+}
+
+double DryCleaningShop::item_cost(const Item& item, bool urgent, double discount) const {
+    double total = 0.0;
+    for (ServiceType type : item.services()) {
+        const Service& selected = applicable_service(type, item);
+        total += selected.calculate_cost(item, urgent, discount);
+    }
+    return Service::round_money(total);
+}
+
+Hours DryCleaningShop::item_duration(const Item& item, bool urgent) const {
+    Hours total = 0.0;
+    for (ServiceType type : item.services()) {
+        total += applicable_service(type, item).calculate_duration(item, urgent);
+    }
+    return total;
+}
+
 double DryCleaningShop::calculate_item_cost(Id item_id) const {
     const Item& item = items_.get(item_id);
     const Order& order = orders_.get(item.order_id());
-    return service(item.service_type()).calculate_cost(item, order.is_urgent(), order.discount_snapshot());
+    return item_cost(item, order.is_urgent(), order.discount_snapshot());
 }
 
 double DryCleaningShop::calculate_order_cost(Id order_id) const {
@@ -884,7 +915,7 @@ bool DryCleaningShop::all_batches_completed(const Order& order, TimePoint& lates
     latest_completion = TimePoint{};
     for (const Id item_id : order.item_ids()) {
         const Item* item = items_.find_by_id(item_id);
-        if (item == nullptr || !item->is_batched()) {
+        if (item == nullptr || !item->is_batched() || !item->services_completed()) {
             return false;
         }
         const Batch* batch = batches_.find_by_id(item->batch_id());
@@ -964,6 +995,7 @@ std::vector<PlanItem> DryCleaningShop::collect_plan_items(TimePoint now) const {
 }
 
 Hours DryCleaningShop::finishing_hours(const Item& item, const Order& order) const {
+    if (!item.is_last_service()) return 0.0;
     const Service& selected = service(item.service_type());
     const Hours turnaround = selected.calculate_duration(item, order.is_urgent());
     return std::max(0.0, turnaround - selected.calculate_processing(item, order.is_urgent()));
@@ -980,6 +1012,10 @@ Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
         }
         for (const Id item_id : orders_.get(entry.first).item_ids()) {
             const Item& item = items_.get(item_id);
+            if (!item.is_last_service()) {
+                entry.second = std::nullopt;
+                break;
+            }
             if (item.is_batched()) {
                 entry.second = std::max(
                     *entry.second,
@@ -1191,7 +1227,16 @@ void DryCleaningShop::complete_batch(Id batch_id, Id acting_employee, TimePoint 
     updated.validate();
     Repository<Batch> batches = batches_;
     replace_by_id(batches, updated);
+    Repository<Item> items = items_;
+    Repository<Order> orders = orders_;
+    for (Id id : updated.item_ids()) {
+        Item& item = items.get(id);
+        item.complete_service();
+        if (!item.services_completed()) orders.get(item.order_id()).set_planned_ready_at(std::nullopt);
+    }
     batches_.swap(batches);
+    items_.swap(items);
+    orders_.swap(orders);
     publish();
 }
 
@@ -1217,15 +1262,27 @@ void DryCleaningShop::check_batch(const Batch& batch, const Repository<Item>& it
     Hours longest = 0.0;
     for (const Id item_id : batch.item_ids()) {
         const Item* item = items.find_by_id(item_id);
-        if (item == nullptr || item->batch_id() != batch.id()) {
+        if (item == nullptr) {
             throw IntegrityException("изделие партии отсутствует или указывает на другую партию");
         }
+        const auto& completed = item->completed_batches();
+        const auto stage = std::find(completed.begin(), completed.end(), batch.id());
+        ServiceType type = item->service_type();
+        if (stage != completed.end()) {
+            const auto index = static_cast<std::size_t>(stage - completed.begin());
+            type = item->services()[index];
+            if (batch.status() != BatchStatus::Completed) {
+                throw IntegrityException("завершённая услуга ссылается на незавершённую партию");
+            }
+        } else if (item->batch_id() != batch.id() || batch.status() == BatchStatus::Completed) {
+            throw IntegrityException("партия не соответствует текущей услуге изделия");
+        }
         const Order& order = orders.get(item->order_id());
-        if (item->service_type() != batch.service_type()) {
+        if (type != batch.service_type()) {
             throw IntegrityException("услуга изделия не совпадает с услугой партии");
         }
         weight += item->weight_kg();
-        longest = std::max(longest, service(item->service_type()).calculate_processing(*item, order.is_urgent()));
+        longest = std::max(longest, service(type).calculate_processing(*item, order.is_urgent()));
     }
     if (std::abs(weight - batch.total_weight_kg()) > EPS) {
         throw IntegrityException("масса партии не совпадает с массой изделий");
