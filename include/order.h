@@ -11,13 +11,12 @@
 class Order {
 public:
     Order() = default;
-    Order(Id client_id, ServiceType service_type, bool urgent, Id employee_id, TimePoint created_at,
+    Order(Id client_id, bool urgent, Id employee_id, TimePoint created_at,
           double discount_snapshot);
 
     Id id() const noexcept;
     Id client_id() const noexcept;
     const std::vector<Id>& item_ids() const noexcept;
-    ServiceType service_type() const noexcept;
     bool is_urgent() const noexcept;
     OrderStatus status() const noexcept;
     TimePoint created_at() const noexcept;
@@ -52,7 +51,6 @@ private:
     Id id_ = 0;
     Id client_id_ = 0;
     std::vector<Id> item_ids_;
-    ServiceType service_type_ = ServiceType::DryCleaning;
     bool urgent_ = false;
     OrderStatus status_ = OrderStatus::Accepted;
     TimePoint created_at_{};

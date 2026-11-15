@@ -40,6 +40,7 @@ private:
     QComboBox* color_group_box_;
     QDoubleSpinBox* weight_edit_;
     QComboBox* soil_box_;
+    QComboBox* service_box_;
     QLineEdit* notes_edit_;
     QListWidget* defects_list_;
     QComboBox* defect_type_box_;

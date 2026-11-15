@@ -190,6 +190,15 @@ void Item::set_condition_notes(std::string condition_notes) {
 
 void Item::set_batch_id(Id batch_id) noexcept { batch_id_ = batch_id; }
 
+ServiceType Item::service_type() const noexcept { return service_type_; }
+
+void Item::set_service_type(ServiceType type) {
+    if (!is_valid(type)) {
+        throw InvalidInputException("service_type", "неизвестный вид услуги");
+    }
+    service_type_ = type;
+}
+
 void Item::add_defect(Defect defect) {
     defect.description = normalize_text(std::move(defect.description));
     defect.validate();
@@ -222,6 +231,9 @@ std::string Item::make_tag(Id order_id, std::size_t index) {
 }
 
 void Item::validate() const {
+    if (!is_valid(service_type_)) {
+        throw InvalidInputException("service_type", "неизвестный вид услуги");
+    }
     check_optional_text("tag", tag_);
     require_text("kind", kind_);
     require_text("material_name", material_name_);
@@ -259,6 +271,7 @@ std::ostream& operator<<(std::ostream& os, const Item& item) {
     }
     writer.put_string(item.condition_notes_);
     writer.put_id(item.batch_id_);
+    writer.put_token(to_string(item.service_type_));
     return os << writer.str();
 }
 
@@ -281,6 +294,7 @@ std::istream& operator>>(std::istream& is, Item& item) {
         }
         value.condition_notes_ = reader.get_string();
         value.batch_id_ = reader.get_id();
+        value.service_type_ = parse_ServiceType(reader.get_token());
     });
 }
 

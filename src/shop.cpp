@@ -739,7 +739,6 @@ OrderQuote DryCleaningShop::quote_order(const OrderDraft& draft, TimePoint now) 
     if (draft.items.size() > kMaxNestedElements) {
         throw InvalidInputException("items", "слишком много изделий в заказе");
     }
-    const Service& selected = service(draft.service_type);
     OrderQuote quote;
     quote.discount = client.discount();
     for (const Item& item : draft.items) {
@@ -747,6 +746,7 @@ OrderQuote DryCleaningShop::quote_order(const OrderDraft& draft, TimePoint now) 
             throw InvalidInputException("items", "изделие черновика не должно иметь служебных полей");
         }
         item.validate();
+        const Service& selected = service(item.service_type());
         if (!selected.is_applicable(item)) {
             throw InvalidInputException("items", "изделие не подходит для выбранной услуги");
         }
@@ -772,7 +772,7 @@ Id DryCleaningShop::accept_order(const OrderDraft& draft, Id acting_employee, Ti
     Repository<Order> orders = orders_;
     Repository<Client> clients = clients_;
 
-    Order order(draft.client_id, draft.service_type, draft.urgent, acting_employee, now, quote.discount);
+    Order order(draft.client_id, draft.urgent, acting_employee, now, quote.discount);
     std::size_t index = 0;
     for (Item item : draft.items) {
         item.set_order_id(expected_id);
@@ -809,6 +809,7 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     }
 
     Item updated = current;
+    updated.set_service_type(item.service_type());
     updated.set_kind(item.kind());
     updated.set_material(item.material_name(), item.material_group(), item.fabric_group());
     updated.set_color(item.color_name(), item.color_group());
@@ -823,7 +824,7 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     }
     updated.validate();
 
-    const Service& selected = service(order.service_type());
+    const Service& selected = service(updated.service_type());
     if (!selected.is_applicable(updated)) {
         throw InvalidInputException("item", "изделие не подходит для услуги заказа");
     }
@@ -832,8 +833,9 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     Hours nominal = 0.0;
     for (const Id id : order.item_ids()) {
         const Item& member = id == updated.id() ? updated : items_.get(id);
-        total += selected.calculate_cost(member, order.is_urgent(), order.discount_snapshot());
-        nominal = std::max(nominal, selected.calculate_duration(member, order.is_urgent()));
+        const Service& member_service = service(member.service_type());
+        total += member_service.calculate_cost(member, order.is_urgent(), order.discount_snapshot());
+        nominal = std::max(nominal, member_service.calculate_duration(member, order.is_urgent()));
     }
 
     Order changed = order;
@@ -854,7 +856,7 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
 double DryCleaningShop::calculate_item_cost(Id item_id) const {
     const Item& item = items_.get(item_id);
     const Order& order = orders_.get(item.order_id());
-    return service(order.service_type()).calculate_cost(item, order.is_urgent(), order.discount_snapshot());
+    return service(item.service_type()).calculate_cost(item, order.is_urgent(), order.discount_snapshot());
 }
 
 double DryCleaningShop::calculate_order_cost(Id order_id) const {
@@ -947,12 +949,12 @@ std::vector<PlanItem> DryCleaningShop::collect_plan_items(TimePoint now) const {
         PlanItem plan_item;
         plan_item.item_id = item.id();
         plan_item.order_id = order->id();
-        plan_item.service_type = order->service_type();
+        plan_item.service_type = item.service_type();
         plan_item.material_group = item.material_group();
         plan_item.fabric_group = item.fabric_group();
         plan_item.color_group = item.color_group();
         plan_item.weight_kg = item.weight_kg();
-        plan_item.duration = service(order->service_type()).calculate_processing(item, order->is_urgent());
+        plan_item.duration = service(item.service_type()).calculate_processing(item, order->is_urgent());
         plan_item.finishing = finishing_hours(item, *order);
         plan_item.deadline = order->deadline();
         plan_item.priority = planner_.compute_priority(plan_item, now);
@@ -962,7 +964,7 @@ std::vector<PlanItem> DryCleaningShop::collect_plan_items(TimePoint now) const {
 }
 
 Hours DryCleaningShop::finishing_hours(const Item& item, const Order& order) const {
-    const Service& selected = service(order.service_type());
+    const Service& selected = service(item.service_type());
     const Hours turnaround = selected.calculate_duration(item, order.is_urgent());
     return std::max(0.0, turnaround - selected.calculate_processing(item, order.is_urgent()));
 }
@@ -1219,11 +1221,11 @@ void DryCleaningShop::check_batch(const Batch& batch, const Repository<Item>& it
             throw IntegrityException("изделие партии отсутствует или указывает на другую партию");
         }
         const Order& order = orders.get(item->order_id());
-        if (order.service_type() != batch.service_type()) {
-            throw IntegrityException("услуга заказа не совпадает с услугой партии");
+        if (item->service_type() != batch.service_type()) {
+            throw IntegrityException("услуга изделия не совпадает с услугой партии");
         }
         weight += item->weight_kg();
-        longest = std::max(longest, service(order.service_type()).calculate_processing(*item, order.is_urgent()));
+        longest = std::max(longest, service(item->service_type()).calculate_processing(*item, order.is_urgent()));
     }
     if (std::abs(weight - batch.total_weight_kg()) > EPS) {
         throw IntegrityException("масса партии не совпадает с массой изделий");

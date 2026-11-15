@@ -94,6 +94,10 @@ void ItemDialog::build_item_form(QFormLayout* form, const Item& initial) {
     soil_box_ = new QComboBox(this);
     fill_enum_combo<SoilLevel>(soil_box_, {SoilLevel::Light, SoilLevel::Medium, SoilLevel::Heavy});
     select_enum(soil_box_, initial.soil_level());
+    service_box_ = new QComboBox(this);
+    fill_enum_combo<ServiceType>(service_box_, {ServiceType::DryCleaning, ServiceType::WetCleaning,
+                                               ServiceType::StainRemoval, ServiceType::Leather});
+    select_enum(service_box_, initial.service_type());
 
     weight_edit_ = new QDoubleSpinBox(this);
     weight_edit_->setRange(kMinWeightKg, kMaxWeightKg);
@@ -103,6 +107,7 @@ void ItemDialog::build_item_form(QFormLayout* form, const Item& initial) {
     weight_edit_->setValue(initial.weight_kg() > 0.0 ? initial.weight_kg() : kDefaultWeightKg);
 
     form->addRow(QStringLiteral("Изделие:"), kind_edit_);
+    form->addRow(QStringLiteral("Услуга:"), service_box_);
     form->addRow(QStringLiteral("Материал:"), material_edit_);
     form->addRow(QStringLiteral("Группа материала:"), material_group_box_);
     form->addRow(QStringLiteral("Группа ткани:"), fabric_group_box_);
@@ -187,6 +192,7 @@ Item ItemDialog::build_item() const {
                color_edit_->text().toStdString(), enum_value<ColorGroup>(color_group_box_), weight_edit_->value(),
                enum_value<SoilLevel>(soil_box_));
     built.set_condition_notes(notes_edit_->text().toStdString());
+    built.set_service_type(enum_value<ServiceType>(service_box_));
     for (const Item::Defect& defect : defects_) {
         built.add_defect(defect);
     }

@@ -276,7 +276,12 @@ void MainWindow::refresh_orders() {
             const QString client_name = client == nullptr ? QStringLiteral("?") : qt_convert::text(client->name());
             set_cell(orders_table_, row, OrderId, QString::number(order.id()), true);
             set_cell(orders_table_, row, OrderClient, client_name);
-            set_cell(orders_table_, row, OrderService, qt_convert::text(display_name(order.service_type())));
+            QStringList services;
+            for (Id item_id : order.item_ids()) {
+                const QString name = qt_convert::text(display_name(shop_.items().get(item_id).service_type()));
+                if (!services.contains(name)) services << name;
+            }
+            set_cell(orders_table_, row, OrderService, services.join(QStringLiteral(", ")));
             set_cell(orders_table_, row, OrderUrgent, order.is_urgent() ? QStringLiteral("Да") : QStringLiteral("Нет"));
             set_cell(orders_table_, row, OrderStatusName, qt_convert::text(display_name(order.status())));
             set_cell(orders_table_, row, OrderItems, QString::number(order.item_ids().size()), true);

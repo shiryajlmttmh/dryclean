@@ -12,12 +12,6 @@
 
 namespace {
 
-void check_service_type(ServiceType service_type) {
-    if (!is_valid(service_type)) {
-        throw InvalidInputException("service_type", "неизвестный вид услуги");
-    }
-}
-
 void check_total_cost(double total_cost) {
     if (!std::isfinite(total_cost) || total_cost < 0.0) {
         throw InvalidInputException("total_cost", "стоимость заказа не может быть отрицательной");
@@ -67,17 +61,15 @@ void check_result_times(OrderStatus status, const std::optional<TimePoint>& actu
 
 }
 
-Order::Order(Id client_id, ServiceType service_type, bool urgent, Id employee_id, TimePoint created_at,
+Order::Order(Id client_id, bool urgent, Id employee_id, TimePoint created_at,
              double discount_snapshot)
     : client_id_(client_id),
-      service_type_(service_type),
       urgent_(urgent),
       created_at_(created_at),
       deadline_(created_at),
       employee_id_(employee_id),
       discount_snapshot_(discount_snapshot) {
     check_nonzero_id("client_id", client_id_);
-    check_service_type(service_type_);
     check_nonzero_id("employee_id", employee_id_);
     check_discount(discount_snapshot_);
     history_.emplace_back(OrderStatus::Accepted, employee_id_, created_at_);
@@ -88,8 +80,6 @@ Id Order::id() const noexcept { return id_; }
 Id Order::client_id() const noexcept { return client_id_; }
 
 const std::vector<Id>& Order::item_ids() const noexcept { return item_ids_; }
-
-ServiceType Order::service_type() const noexcept { return service_type_; }
 
 bool Order::is_urgent() const noexcept { return urgent_; }
 
@@ -182,7 +172,6 @@ void Order::validate() const {
     if (item_ids_.empty()) {
         throw InvalidInputException("item_ids", "заказ не может быть пустым");
     }
-    check_service_type(service_type_);
     if (!is_valid(status_)) {
         throw InvalidInputException("status", "неизвестный статус заказа");
     }
@@ -211,7 +200,6 @@ std::ostream& operator<<(std::ostream& os, const Order& order) {
     for (const Id item_id : order.item_ids_) {
         writer.put_id(item_id);
     }
-    writer.put_token(to_string(order.service_type_));
     writer.put_bool(order.urgent_);
     writer.put_token(to_string(order.status_));
     writer.put_time(order.created_at_);
@@ -237,7 +225,6 @@ std::istream& operator>>(std::istream& is, Order& order) {
         for (std::size_t i = 0; i < item_count; ++i) {
             value.item_ids_.push_back(reader.get_id());
         }
-        value.service_type_ = parse_ServiceType(reader.get_token());
         value.urgent_ = reader.get_bool();
         value.status_ = parse_OrderStatus(reader.get_token());
         value.created_at_ = reader.get_time();

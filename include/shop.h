@@ -18,7 +18,6 @@
 struct OrderDraft {
     Id client_id = 0;
     std::vector<Item> items;
-    ServiceType service_type = ServiceType::DryCleaning;
     bool urgent = false;
 };
 

@@ -28,10 +28,10 @@ constexpr int kDialogHeight = 600;
 constexpr int kWeightDecimals = 2;
 constexpr const char* kNoCost = "—";
 
-enum ItemColumn { ItemKind, ItemMaterial, ItemColor, ItemWeight, ItemSoil, ItemStains, ItemCost, ItemColumnCount };
+enum ItemColumn { ItemKind, ItemMaterial, ItemColor, ItemWeight, ItemSoil, ItemStains, ItemCost, ItemService, ItemColumnCount };
 
 constexpr std::array<const char*, ItemColumnCount> kItemHeaders{"Изделие", "Материал", "Цвет", "Масса",
-                                                                "Загрязнение", "Пятен", "Цена"};
+                                                                "Загрязнение", "Пятен", "Цена", "Услуга"};
 
 }
 
@@ -63,7 +63,6 @@ OrderDialog::OrderDialog(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     connect(buttons, &QDialogButtonBox::accepted, this, &OrderDialog::try_accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(client_box_, &QComboBox::currentIndexChanged, this, &OrderDialog::refresh);
-    connect(service_box_, &QComboBox::currentIndexChanged, this, &OrderDialog::refresh);
     connect(urgent_box_, &QCheckBox::toggled, this, &OrderDialog::refresh);
     refresh();
 }
@@ -75,14 +74,9 @@ void OrderDialog::build_header(QFormLayout* form) {
                              static_cast<unsigned int>(client.id()));
     }
 
-    service_box_ = new QComboBox(this);
-    fill_enum_combo<ServiceType>(service_box_, {ServiceType::DryCleaning, ServiceType::WetCleaning,
-                                                ServiceType::StainRemoval, ServiceType::Leather});
-
     urgent_box_ = new QCheckBox(QStringLiteral("Срочный заказ"), this);
 
     form->addRow(QStringLiteral("Клиент:"), client_box_);
-    form->addRow(QStringLiteral("Услуга:"), service_box_);
     form->addRow(QString(), urgent_box_);
 }
 
@@ -118,7 +112,6 @@ OrderDraft OrderDialog::make_draft() const {
     OrderDraft draft;
     draft.client_id = static_cast<Id>(client_box_->currentData().toUInt());
     draft.items = items_;
-    draft.service_type = enum_value<ServiceType>(service_box_);
     draft.urgent = urgent_box_->isChecked();
     return draft;
 }
@@ -161,6 +154,7 @@ void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
         set_cell(items_table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
         set_cell(items_table_, row, ItemStains, QString::number(item.stain_count()), true);
         set_cell(items_table_, row, ItemCost, cost, true);
+        set_cell(items_table_, row, ItemService, qt_convert::text(display_name(item.service_type())));
         set_row_position(items_table_, row, index);
         if (selected == index) {
             items_table_->selectRow(row);

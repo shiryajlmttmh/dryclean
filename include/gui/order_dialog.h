@@ -39,7 +39,6 @@ private:
     DryCleaningShop& shop_;
     Id employee_id_;
     QComboBox* client_box_;
-    QComboBox* service_box_;
     QCheckBox* urgent_box_;
     QTableWidget* items_table_;
     QPushButton* edit_button_;
