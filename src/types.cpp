@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <ratio>
+#include <utility>
 
 #include "exceptions.h"
 
@@ -12,6 +13,12 @@ constexpr std::array kService{"DryCleaning", "WetCleaning", "StainRemoval", "Lea
 constexpr std::array kMaterial{"Basic", "Delicate", "LeatherSuede", "SheepskinVelour",
                                                "NaturalFur"};
 constexpr std::array kFabric{"Dense", "Delicate", "LeatherFur"};
+constexpr std::array kMaterialFabricGroups{
+    std::pair{MaterialGroup::Basic, FabricGroup::Dense},
+    std::pair{MaterialGroup::Delicate, FabricGroup::Delicate},
+    std::pair{MaterialGroup::LeatherSuede, FabricGroup::LeatherFur},
+    std::pair{MaterialGroup::SheepskinVelour, FabricGroup::LeatherFur},
+    std::pair{MaterialGroup::NaturalFur, FabricGroup::LeatherFur}};
 constexpr std::array kColor{"Light", "Dark"};
 constexpr std::array kSoil{"Light", "Medium", "Heavy"};
 constexpr std::array kStain{"Light", "Hard", "Special"};
@@ -38,6 +45,13 @@ E enum_from_string(const std::string& text, const std::array<const char*, N>& na
     throw InvalidInputException(type_name, "неизвестное значение: " + text);
 }
 
+}
+
+FabricGroup fabric_group_for(MaterialGroup group) {
+    for (const auto& [material, fabric] : kMaterialFabricGroups) {
+        if (material == group) return fabric;
+    }
+    throw InvalidInputException("material_group", "неизвестная группа материала");
 }
 
 std::string to_string(ServiceType v) { return enum_to_string(v, kService, "ServiceType"); }

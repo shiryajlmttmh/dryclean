@@ -35,7 +35,6 @@ private:
     QLineEdit* kind_edit_;
     QLineEdit* material_edit_;
     QComboBox* material_group_box_;
-    QComboBox* fabric_group_box_;
     QLineEdit* color_edit_;
     QComboBox* color_group_box_;
     QDoubleSpinBox* weight_edit_;

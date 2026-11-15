@@ -83,10 +83,6 @@ void ItemDialog::build_item_form(QFormLayout* form, const Item& initial) {
                                     MaterialGroup::SheepskinVelour, MaterialGroup::NaturalFur});
     select_enum(material_group_box_, initial.material_group());
 
-    fabric_group_box_ = new QComboBox(this);
-    fill_enum_combo<FabricGroup>(fabric_group_box_, {FabricGroup::Dense, FabricGroup::Delicate, FabricGroup::LeatherFur});
-    select_enum(fabric_group_box_, initial.fabric_group());
-
     color_group_box_ = new QComboBox(this);
     fill_enum_combo<ColorGroup>(color_group_box_, {ColorGroup::Light, ColorGroup::Dark});
     select_enum(color_group_box_, initial.color_group());
@@ -148,7 +144,6 @@ void ItemDialog::build_item_form(QFormLayout* form, const Item& initial) {
     form->addRow(service_buttons);
     form->addRow(QStringLiteral("Материал:"), material_edit_);
     form->addRow(QStringLiteral("Группа материала:"), material_group_box_);
-    form->addRow(QStringLiteral("Группа ткани:"), fabric_group_box_);
     form->addRow(QStringLiteral("Цвет:"), color_edit_);
     form->addRow(QStringLiteral("Группа цвета:"), color_group_box_);
     form->addRow(QStringLiteral("Масса:"), weight_edit_);
@@ -226,7 +221,7 @@ void ItemDialog::remove_defect() {
 
 Item ItemDialog::build_item() const {
     Item built(kind_edit_->text().toStdString(), material_edit_->text().toStdString(),
-               enum_value<MaterialGroup>(material_group_box_), enum_value<FabricGroup>(fabric_group_box_),
+               enum_value<MaterialGroup>(material_group_box_),
                color_edit_->text().toStdString(), enum_value<ColorGroup>(color_group_box_), weight_edit_->value(),
                enum_value<SoilLevel>(soil_box_));
     built.set_condition_notes(notes_edit_->text().toStdString());

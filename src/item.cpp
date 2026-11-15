@@ -22,29 +22,9 @@ constexpr int kTagIndexWidth = 2;
 constexpr char kTagPrefix = 'O';
 constexpr char kTagSeparator = '-';
 
-void check_material_groups(MaterialGroup material_group, FabricGroup fabric_group) {
+void check_material_group(MaterialGroup material_group) {
     if (!is_valid(material_group)) {
         throw InvalidInputException("material_group", "неизвестная группа материала");
-    }
-    if (!is_valid(fabric_group)) {
-        throw InvalidInputException("fabric_group", "неизвестная группа ткани");
-    }
-    bool consistent = false;
-    switch (material_group) {
-        case MaterialGroup::Basic:
-            consistent = fabric_group == FabricGroup::Dense || fabric_group == FabricGroup::Delicate;
-            break;
-        case MaterialGroup::Delicate:
-            consistent = fabric_group == FabricGroup::Delicate;
-            break;
-        case MaterialGroup::LeatherSuede:
-        case MaterialGroup::SheepskinVelour:
-        case MaterialGroup::NaturalFur:
-            consistent = fabric_group == FabricGroup::LeatherFur;
-            break;
-    }
-    if (!consistent) {
-        throw InvalidInputException("fabric_group", "группа ткани не соответствует группе материала");
     }
 }
 
@@ -104,10 +84,10 @@ void Item::Defect::validate() const {
     }
 }
 
-Item::Item(std::string kind, std::string material_name, MaterialGroup material_group, FabricGroup fabric_group,
+Item::Item(std::string kind, std::string material_name, MaterialGroup material_group,
            std::string color_name, ColorGroup color_group, double weight_kg, SoilLevel soil_level) {
     set_kind(std::move(kind));
-    set_material(std::move(material_name), material_group, fabric_group);
+    set_material(std::move(material_name), material_group);
     set_color(std::move(color_name), color_group);
     set_weight_kg(weight_kg);
     set_soil_level(soil_level);
@@ -125,7 +105,7 @@ const std::string& Item::material_name() const noexcept { return material_name_;
 
 MaterialGroup Item::material_group() const noexcept { return material_group_; }
 
-FabricGroup Item::fabric_group() const noexcept { return fabric_group_; }
+FabricGroup Item::fabric_group() const { return fabric_group_for(material_group_); }
 
 const std::string& Item::color_name() const noexcept { return color_name_; }
 
@@ -157,13 +137,12 @@ void Item::set_kind(std::string kind) {
     kind_ = std::move(kind);
 }
 
-void Item::set_material(std::string material_name, MaterialGroup material_group, FabricGroup fabric_group) {
+void Item::set_material(std::string material_name, MaterialGroup material_group) {
     material_name = normalize_text(std::move(material_name));
     require_text("material_name", material_name);
-    check_material_groups(material_group, fabric_group);
+    check_material_group(material_group);
     material_name_ = std::move(material_name);
     material_group_ = material_group;
-    fabric_group_ = fabric_group;
 }
 
 void Item::set_color(std::string color_name, ColorGroup color_group) {
@@ -275,7 +254,7 @@ void Item::validate() const {
     check_optional_text("tag", tag_);
     require_text("kind", kind_);
     require_text("material_name", material_name_);
-    check_material_groups(material_group_, fabric_group_);
+    check_material_group(material_group_);
     require_text("color_name", color_name_);
     check_color_group(color_group_);
     check_weight(weight_kg_);
@@ -298,7 +277,6 @@ std::ostream& operator<<(std::ostream& os, const Item& item) {
     writer.put_string(item.kind_);
     writer.put_string(item.material_name_);
     writer.put_token(to_string(item.material_group_));
-    writer.put_token(to_string(item.fabric_group_));
     writer.put_string(item.color_name_);
     writer.put_token(to_string(item.color_group_));
     writer.put_double(item.weight_kg_);
@@ -324,7 +302,6 @@ std::istream& operator>>(std::istream& is, Item& item) {
         value.kind_ = reader.get_string();
         value.material_name_ = reader.get_string();
         value.material_group_ = parse_MaterialGroup(reader.get_token());
-        value.fabric_group_ = parse_FabricGroup(reader.get_token());
         value.color_name_ = reader.get_string();
         value.color_group_ = parse_ColorGroup(reader.get_token());
         value.weight_kg_ = reader.get_double();

@@ -823,7 +823,7 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     Item updated = current;
     updated.set_services(item.services());
     updated.set_kind(item.kind());
-    updated.set_material(item.material_name(), item.material_group(), item.fabric_group());
+    updated.set_material(item.material_name(), item.material_group());
     updated.set_color(item.color_name(), item.color_group());
     updated.set_weight_kg(item.weight_kg());
     updated.set_soil_level(item.soil_level());

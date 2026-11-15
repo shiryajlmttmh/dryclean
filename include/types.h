@@ -14,6 +14,7 @@ constexpr double EPS = 1e-9;
 enum class ServiceType { DryCleaning, WetCleaning, StainRemoval, Leather };
 enum class MaterialGroup { Basic, Delicate, LeatherSuede, SheepskinVelour, NaturalFur };
 enum class FabricGroup { Dense, Delicate, LeatherFur };
+FabricGroup fabric_group_for(MaterialGroup group);
 enum class ColorGroup { Light, Dark };
 enum class SoilLevel { Light, Medium, Heavy };
 enum class StainClass { Light, Hard, Special };

@@ -21,7 +21,7 @@ public:
     };
 
     Item() = default;
-    Item(std::string kind, std::string material_name, MaterialGroup material_group, FabricGroup fabric_group,
+    Item(std::string kind, std::string material_name, MaterialGroup material_group,
          std::string color_name, ColorGroup color_group, double weight_kg, SoilLevel soil_level);
 
     Id id() const noexcept;
@@ -30,7 +30,7 @@ public:
     const std::string& kind() const noexcept;
     const std::string& material_name() const noexcept;
     MaterialGroup material_group() const noexcept;
-    FabricGroup fabric_group() const noexcept;
+    FabricGroup fabric_group() const;
     const std::string& color_name() const noexcept;
     ColorGroup color_group() const noexcept;
     double weight_kg() const noexcept;
@@ -50,7 +50,7 @@ public:
     void set_order_id(Id order_id) noexcept;
     void set_tag(std::string tag);
     void set_kind(std::string kind);
-    void set_material(std::string material_name, MaterialGroup material_group, FabricGroup fabric_group);
+    void set_material(std::string material_name, MaterialGroup material_group);
     void set_color(std::string color_name, ColorGroup color_group);
     void set_weight_kg(double weight_kg);
     void set_soil_level(SoilLevel soil_level);
@@ -77,7 +77,6 @@ private:
     std::string kind_;
     std::string material_name_;
     MaterialGroup material_group_ = MaterialGroup::Basic;
-    FabricGroup fabric_group_ = FabricGroup::Dense;
     std::string color_name_;
     ColorGroup color_group_ = ColorGroup::Light;
     double weight_kg_ = 0.0;
