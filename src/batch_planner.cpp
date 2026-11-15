@@ -51,6 +51,16 @@ std::map<Id, std::optional<TimePoint>> order_ready_times(const Plan& plan, const
     return ready;
 }
 
+bool fits_maintenance(const Plan& plan, const Machine& machine) {
+    Hours hours = 0.0;
+    for (const PlannedBatch& batch : plan.batches) {
+        if (batch.machine_id == machine.id()) {
+            hours += hours_between(batch.planned_ready_at, batch.planned_start_at);
+        }
+    }
+    return hours <= machine.maintenance_remaining() + EPS;
+}
+
 std::optional<std::string> machine_shortage(const PlanItem& item, const std::vector<Machine>& machines) {
     double max_capacity = 0.0;
     bool has_type = false;
@@ -370,6 +380,7 @@ std::optional<std::size_t> BatchPlanner::find_best_batch(const Plan& plan, const
         trial.batches = plan.batches;
         trial.batches[index].item_ids.push_back(item.item_id);
         reschedule(trial, context.items, context.machines, context.now);
+        if (!fits_maintenance(trial, *machine)) continue;
         const TimePoint end = trial.batches[index].planned_ready_at;
         const bool tie = std::abs(fill - best_fill) <= EPS;
         const bool better = !best_index || fill > best_fill + EPS ||
@@ -390,9 +401,20 @@ std::optional<std::string> BatchPlanner::open_batch(Plan& plan, const PlanItem& 
         return reason;
     }
     const auto available = machine_availability(plan, context.machines, context.now);
-    const auto machine_id = pick_machine(item.service_type, item.weight_kg, context.machines, available);
+    std::vector<Machine> eligible;
+    for (const Machine& machine : context.machines) {
+        Plan trial = plan;
+        PlannedBatch candidate;
+        candidate.machine_id = machine.id();
+        candidate.service_type = item.service_type;
+        candidate.item_ids.push_back(item.item_id);
+        trial.batches.push_back(std::move(candidate));
+        reschedule(trial, context.items, context.machines, context.now);
+        if (fits_maintenance(trial, machine)) eligible.push_back(machine);
+    }
+    const auto machine_id = pick_machine(item.service_type, item.weight_kg, eligible, available);
     if (!machine_id) {
-        return std::string("нет подходящей машины");
+        return std::string("нет подходящей машины с достаточным ресурсом до ТО");
     }
     PlannedBatch fresh;
     fresh.machine_id = *machine_id;

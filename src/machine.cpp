@@ -1,6 +1,7 @@
 #include "machine.h"
 
 #include <cmath>
+#include <algorithm>
 #include <istream>
 #include <ostream>
 #include <utility>
@@ -25,10 +26,11 @@ void check_capacity(double capacity_kg) {
 
 }
 
-Machine::Machine(std::string name, ServiceType type, double capacity_kg) {
+Machine::Machine(std::string name, ServiceType type, double capacity_kg, Hours maintenance_interval) {
     set_name(std::move(name));
     set_type(type);
     set_capacity_kg(capacity_kg);
+    set_maintenance_interval(maintenance_interval);
 }
 
 Id Machine::id() const noexcept { return id_; }
@@ -40,6 +42,30 @@ ServiceType Machine::type() const noexcept { return type_; }
 double Machine::capacity_kg() const noexcept { return capacity_kg_; }
 
 TimePoint Machine::free_at() const noexcept { return free_at_; }
+
+Hours Machine::maintenance_interval() const noexcept { return maintenance_interval_; }
+
+Hours Machine::hours_since_maintenance() const noexcept { return hours_since_maintenance_; }
+
+Hours Machine::maintenance_remaining() const noexcept {
+    return std::max(0.0, maintenance_interval_ - hours_since_maintenance_);
+}
+
+void Machine::set_maintenance_interval(Hours hours) {
+    if (!std::isfinite(hours) || hours <= 0.0 || hours < hours_since_maintenance_) {
+        throw InvalidInputException("maintenance", "интервал ТО должен быть положительным и не меньше занятого ресурса");
+    }
+    maintenance_interval_ = hours;
+}
+
+void Machine::reserve_work(Hours hours) {
+    if (!std::isfinite(hours) || hours <= 0.0 || hours > maintenance_remaining() + EPS) {
+        throw InvalidInputException("maintenance", "недостаточно часов до ТО машины «" + name_ + "»");
+    }
+    hours_since_maintenance_ += hours;
+}
+
+void Machine::complete_maintenance() noexcept { hours_since_maintenance_ = 0.0; }
 
 void Machine::set_id(Id id) noexcept { id_ = id; }
 
@@ -76,6 +102,11 @@ void Machine::validate() const {
     require_text("name", name_);
     check_type(type_);
     check_capacity(capacity_kg_);
+    if (!std::isfinite(maintenance_interval_) || maintenance_interval_ <= 0.0 ||
+        !std::isfinite(hours_since_maintenance_) || hours_since_maintenance_ < 0.0 ||
+        hours_since_maintenance_ > maintenance_interval_) {
+        throw InvalidInputException("maintenance", "некорректный ресурс машины до ТО");
+    }
 }
 
 bool Machine::operator==(const Machine& other) const noexcept { return id_ == other.id_; }
@@ -89,6 +120,8 @@ std::ostream& operator<<(std::ostream& os, const Machine& machine) {
     writer.put_token(to_string(machine.type_));
     writer.put_double(machine.capacity_kg_);
     writer.put_time(machine.free_at_);
+    writer.put_double(machine.maintenance_interval_);
+    writer.put_double(machine.hours_since_maintenance_);
     return os << writer.str();
 }
 
@@ -99,5 +132,7 @@ std::istream& operator>>(std::istream& is, Machine& machine) {
         value.type_ = parse_ServiceType(reader.get_token());
         value.capacity_kg_ = reader.get_double();
         value.free_at_ = reader.get_time();
+        value.maintenance_interval_ = reader.get_double();
+        value.hours_since_maintenance_ = reader.get_double();
     });
 }

@@ -22,5 +22,6 @@ private:
     QLineEdit* name_edit_;
     QComboBox* type_box_;
     QDoubleSpinBox* capacity_edit_;
+    QDoubleSpinBox* maintenance_edit_;
     Apply apply_;
 };

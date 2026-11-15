@@ -11,4 +11,11 @@ protected:
     void add_record() override;
     void edit_record(Id id) override;
     void remove_record(Id id) override;
+    void update_buttons() override;
+
+private:
+    void show_history();
+    void service_selected();
+    QPushButton* history_button_;
+    QPushButton* service_button_;
 };

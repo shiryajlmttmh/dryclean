@@ -496,6 +496,7 @@ void DryCleaningShop::update_machine(const Machine& machine, Id acting_employee)
     updated.set_name(machine.name());
     updated.set_type(machine.type());
     updated.set_capacity_kg(machine.capacity_kg());
+    updated.set_maintenance_interval(machine.maintenance_interval());
     updated.validate();
     const bool changes_setup = updated.type() != current.type() || updated.capacity_kg() != current.capacity_kg();
     if (changes_setup && has_scheduled_batch(current.id())) {
@@ -503,6 +504,18 @@ void DryCleaningShop::update_machine(const Machine& machine, Id acting_employee)
     }
     Repository<Machine> copy = machines_;
     replace_by_id(copy, updated);
+    machines_.swap(copy);
+    publish();
+}
+
+void DryCleaningShop::service_machine(Id machine_id, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::ManageStaff);
+    const Machine& machine = machines_.get(machine_id);
+    if (has_scheduled_batch(machine_id) || !machine.is_free_at(now)) {
+        throw InvalidInputException("maintenance", "сначала завершите все партии машины");
+    }
+    Repository<Machine> copy = machines_;
+    copy.get(machine_id).complete_maintenance();
     machines_.swap(copy);
     publish();
 }
@@ -1068,10 +1081,15 @@ void DryCleaningShop::check_material_stock(const std::map<Id, double>& needed) c
 void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations,
                                      const Plan& plan) const {
     std::map<Id, TimePoint> cursor;
+    std::map<Id, Hours> work;
     for (const Machine& machine : machines_) {
         cursor[machine.id()] = std::max(plan.built_at + kPlanningDelay, machine.free_at());
     }
     for (std::size_t i = 0; i < batches.size(); ++i) {
+        work[batches[i].machine_id] += durations[i];
+        if (work[batches[i].machine_id] > machines_.get(batches[i].machine_id).maintenance_remaining() + EPS) {
+            throw PlanningException("план превышает оставшийся ресурс машины до ТО");
+        }
         TimePoint& slot = cursor[batches[i].machine_id];
         batches[i].planned_start_at = slot;
         batches[i].planned_ready_at = add_hours(slot, durations[i]);
@@ -1146,7 +1164,9 @@ std::vector<Id> DryCleaningShop::confirm_plan(const Plan& plan, Id acting_employ
                 }
             }
         }
-        machines.get(planned.machine_id).occupy_until(planned.planned_ready_at);
+        Machine& machine = machines.get(planned.machine_id);
+        machine.reserve_work(hours_between(planned.planned_ready_at, planned.planned_start_at));
+        machine.occupy_until(planned.planned_ready_at);
     }
     for (const auto& entry : consumption) {
         materials.get(entry.first).write_off(entry.second);

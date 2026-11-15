@@ -63,6 +63,7 @@ public:
     void remove_employee(Id employee_id, Id acting_employee);
     Id add_machine(Machine machine, Id acting_employee);
     void update_machine(const Machine& machine, Id acting_employee);
+    void service_machine(Id machine_id, Id acting_employee, TimePoint now);
     void remove_machine(Id machine_id, Id acting_employee);
 
     Id register_client(std::string name, std::string phone, double discount, Id acting_employee);

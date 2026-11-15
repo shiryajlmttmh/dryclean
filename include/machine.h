@@ -9,13 +9,19 @@
 class Machine {
 public:
     Machine() = default;
-    Machine(std::string name, ServiceType type, double capacity_kg);
+    Machine(std::string name, ServiceType type, double capacity_kg, Hours maintenance_interval);
 
     Id id() const noexcept;
     const std::string& name() const noexcept;
     ServiceType type() const noexcept;
     double capacity_kg() const noexcept;
     TimePoint free_at() const noexcept;
+    Hours maintenance_interval() const noexcept;
+    Hours hours_since_maintenance() const noexcept;
+    Hours maintenance_remaining() const noexcept;
+    void set_maintenance_interval(Hours hours);
+    void reserve_work(Hours hours);
+    void complete_maintenance() noexcept;
 
     void set_id(Id id) noexcept;
     void set_name(std::string name);
@@ -40,4 +46,6 @@ private:
     ServiceType type_ = ServiceType::DryCleaning;
     double capacity_kg_ = 0.0;
     TimePoint free_at_{};
+    Hours maintenance_interval_ = 0.0;
+    Hours hours_since_maintenance_ = 0.0;
 };
