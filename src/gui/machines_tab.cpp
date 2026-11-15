@@ -150,7 +150,7 @@ void MachinesTab::fill(QTableWidget* table) {
         set_cell(table, row, MachineFreeAt,
                  machine.is_free_at(now) ? QStringLiteral("свободна") : qt_convert::format_time(machine.free_at()));
         set_cell(table, row, MachineMaintenance,
-                 QString::number(machine.maintenance_remaining(), 'f', kMaintenanceDecimals), true);
+                 QString::number(machine.maintenance_remaining(), 'f', kMaintenanceDecimals));
         ++row;
     }
 }
