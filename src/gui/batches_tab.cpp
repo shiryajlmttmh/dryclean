@@ -1,6 +1,6 @@
 #include "gui/batches_tab.h"
 
-#include <QComboBox>
+#include <QTabBar>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QTableWidget>
@@ -55,31 +55,34 @@ constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{
 
 BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     : QWidget(parent), shop_(shop), employee_id_(employee_id) {
-    filter_box_ = new QComboBox(this);
-    filter_box_->addItem(QStringLiteral("Запланированные и в работе"), static_cast<int>(BatchStatus::Scheduled));
-    filter_box_->addItem(QStringLiteral("Завершённые"), static_cast<int>(BatchStatus::Completed));
-    filter_box_->addItem(QStringLiteral("Все партии"), kAllBatches);
+    filter_tabs_ = new QTabBar(this);
+    filter_tabs_->setExpanding(false);
+    filter_tabs_->setTabData(filter_tabs_->addTab(QStringLiteral("Запланированные и в работе")),
+                             static_cast<int>(BatchStatus::Scheduled));
+    filter_tabs_->setTabData(filter_tabs_->addTab(QStringLiteral("Завершённые")),
+                             static_cast<int>(BatchStatus::Completed));
+    filter_tabs_->setTabData(filter_tabs_->addTab(QStringLiteral("Все партии")), kAllBatches);
     complete_button_ = new QPushButton(QStringLiteral("Завершить партию"), this);
     table_ = new QTableWidget(this);
     configure_table(table_, make_headers(kBatchHeaders));
 
     auto* toolbar = new QHBoxLayout;
-    toolbar->addWidget(filter_box_);
     toolbar->addStretch(kStretch);
     toolbar->addWidget(complete_button_);
 
     auto* layout = new QVBoxLayout(this);
+    layout->addWidget(filter_tabs_);
     layout->addLayout(toolbar);
     layout->addWidget(table_);
 
-    connect(filter_box_, &QComboBox::currentIndexChanged, this, &BatchesTab::refresh);
+    connect(filter_tabs_, &QTabBar::currentChanged, this, &BatchesTab::refresh);
     connect(complete_button_, &QPushButton::clicked, this, &BatchesTab::complete);
     connect(table_, &QTableWidget::itemSelectionChanged, this, &BatchesTab::update_buttons);
     refresh();
 }
 
 void BatchesTab::refresh() {
-    const int filter = filter_box_->currentData().toInt();
+    const int filter = filter_tabs_->tabData(filter_tabs_->currentIndex()).toInt();
     const std::optional<Id> selected = selected_id(table_, BatchId);
     std::vector<const Batch*> shown;
     for (const Batch& batch : shop_.batches()) {

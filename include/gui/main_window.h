@@ -6,7 +6,7 @@
 #include "shop.h"
 
 class QCloseEvent;
-class QComboBox;
+class QTabBar;
 class QLabel;
 class QLineEdit;
 class BatchesTab;
@@ -58,7 +58,7 @@ private:
     QPushButton* add_client_button_ = nullptr;
     QPushButton* edit_client_button_ = nullptr;
     QPushButton* remove_client_button_ = nullptr;
-    QComboBox* status_filter_ = nullptr;
+    QTabBar* status_tabs_ = nullptr;
     QPushButton* accept_order_button_ = nullptr;
     QPushButton* ready_order_button_ = nullptr;
     QPushButton* issue_order_button_ = nullptr;

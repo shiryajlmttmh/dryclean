@@ -4,7 +4,7 @@
 
 #include "gui/table_tab.h"
 
-class QComboBox;
+class QTabBar;
 class QLineEdit;
 
 class MaterialsTab : public TableTab {
@@ -25,7 +25,7 @@ private:
                       const std::function<void(Id, double)>& apply);
 
     QLineEdit* search_edit_;
-    QComboBox* sort_box_;
+    QTabBar* sort_tabs_;
     QPushButton* restock_button_;
     QPushButton* write_off_button_;
 };

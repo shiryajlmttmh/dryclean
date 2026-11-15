@@ -4,7 +4,7 @@
 
 #include "shop.h"
 
-class QComboBox;
+class QTabBar;
 class QPushButton;
 class QTableWidget;
 
@@ -29,7 +29,7 @@ private:
 
     DryCleaningShop& shop_;
     Id employee_id_;
-    QComboBox* filter_box_;
+    QTabBar* filter_tabs_;
     QPushButton* complete_button_;
     QTableWidget* table_;
 };

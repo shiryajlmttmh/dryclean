@@ -2,7 +2,7 @@
 
 #include <QAction>
 #include <QCloseEvent>
-#include <QComboBox>
+#include <QTabBar>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QKeySequence>
@@ -156,19 +156,21 @@ QWidget* MainWindow::build_orders_tab() {
     auto* layout = new QVBoxLayout(page);
 
     auto* toolbar = new QHBoxLayout;
-    status_filter_ = new QComboBox(page);
-    status_filter_->addItem(QStringLiteral("Все статусы"), kAllStatuses);
-    status_filter_->addItem(QStringLiteral("Просроченные"), kOverdueOrders);
+    status_tabs_ = new QTabBar(page);
+    status_tabs_->setExpanding(false);
+    status_tabs_->setTabData(status_tabs_->addTab(QStringLiteral("Все статусы")), kAllStatuses);
+    status_tabs_->setTabData(status_tabs_->addTab(QStringLiteral("Просроченные")), kOverdueOrders);
     for (const OrderStatus status : {OrderStatus::Accepted, OrderStatus::InProgress, OrderStatus::Ready,
                                      OrderStatus::Issued}) {
-        status_filter_->addItem(qt_convert::text(display_name(status)), static_cast<int>(status));
+        status_tabs_->setTabData(status_tabs_->addTab(qt_convert::text(display_name(status))),
+                                 static_cast<int>(status));
     }
     accept_order_button_ = new QPushButton(QStringLiteral("Принять заказ"), page);
     ready_order_button_ = new QPushButton(QStringLiteral("Отметить готовым"), page);
     issue_order_button_ = new QPushButton(QStringLiteral("Выдать клиенту"), page);
     order_items_button_ = new QPushButton(QStringLiteral("Изделия заказа"), page);
     remove_order_button_ = new QPushButton(QStringLiteral("Удалить заказ"), page);
-    toolbar->addWidget(status_filter_);
+    layout->addWidget(status_tabs_);
     toolbar->addStretch(kStretch);
     toolbar->addWidget(order_items_button_);
     toolbar->addWidget(accept_order_button_);
@@ -181,7 +183,7 @@ QWidget* MainWindow::build_orders_tab() {
     configure_table(orders_table_, make_headers(kOrderHeaders));
     layout->addWidget(orders_table_);
 
-    connect(status_filter_, &QComboBox::currentIndexChanged, this, &MainWindow::refresh_orders);
+    connect(status_tabs_, &QTabBar::currentChanged, this, &MainWindow::refresh_orders);
     connect(accept_order_button_, &QPushButton::clicked, this, &MainWindow::accept_order);
     connect(order_items_button_, &QPushButton::clicked, this, &MainWindow::show_order_items);
     connect(orders_table_, &QTableWidget::cellDoubleClicked, this, &MainWindow::show_order_items);
@@ -240,7 +242,7 @@ void MainWindow::refresh_clients() {
 }
 
 std::vector<Order> MainWindow::filtered_orders() const {
-    const int filter = status_filter_->currentData().toInt();
+    const int filter = status_tabs_->tabData(status_tabs_->currentIndex()).toInt();
     if (filter == kOverdueOrders) {
         return shop_.find_overdue_orders(qt_convert::now());
     }

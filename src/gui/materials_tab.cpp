@@ -1,6 +1,7 @@
 #include "gui/materials_tab.h"
 
-#include <QComboBox>
+#include <QTabBar>
+#include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLineEdit>
@@ -19,7 +20,7 @@ namespace {
 
 constexpr int kStockDecimals = 2;
 constexpr int kSearchPosition = 0;
-constexpr int kSortPosition = 1;
+constexpr int kSortPosition = 0;
 constexpr int kConsumptionDecimals = 3;
 constexpr double kMinAmount = 0.01;
 constexpr double kMaxAmount = 1000000.0;
@@ -55,27 +56,29 @@ MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
     search_edit_->setPlaceholderText(QStringLiteral("Поиск по названию"));
     search_edit_->setClearButtonEnabled(true);
 
-    sort_box_ = new QComboBox(this);
-    sort_box_->addItem(QStringLiteral("По названию"), static_cast<int>(MaterialOrder::ByName));
-    sort_box_->addItem(QStringLiteral("По остатку"), static_cast<int>(MaterialOrder::ByStock));
+    sort_tabs_ = new QTabBar(this);
+    sort_tabs_->setExpanding(false);
+    sort_tabs_->setTabData(sort_tabs_->addTab(QStringLiteral("По названию")), static_cast<int>(MaterialOrder::ByName));
+    sort_tabs_->setTabData(sort_tabs_->addTab(QStringLiteral("По остатку")), static_cast<int>(MaterialOrder::ByStock));
 
     restock_button_ = new QPushButton(QStringLiteral("Пополнить"), this);
     write_off_button_ = new QPushButton(QStringLiteral("Списать"), this);
 
     toolbar_->insertWidget(kSearchPosition, search_edit_, kStretch);
-    toolbar_->insertWidget(kSortPosition, sort_box_);
+    static_cast<QVBoxLayout*>(layout())->insertWidget(kSortPosition, sort_tabs_);
     toolbar_->addWidget(restock_button_);
     toolbar_->addWidget(write_off_button_);
 
     connect(search_edit_, &QLineEdit::textChanged, this, &TableTab::refresh);
-    connect(sort_box_, &QComboBox::currentIndexChanged, this, &TableTab::refresh);
+    connect(sort_tabs_, &QTabBar::currentChanged, this, &TableTab::refresh);
     connect(restock_button_, &QPushButton::clicked, this, &MaterialsTab::restock);
     connect(write_off_button_, &QPushButton::clicked, this, &MaterialsTab::write_off);
 }
 
 void MaterialsTab::fill(QTableWidget* table) {
     const std::vector<Material> found = shop_.find_materials(
-        search_edit_->text().toStdString(), static_cast<MaterialOrder>(sort_box_->currentData().toInt()));
+        search_edit_->text().toStdString(),
+        static_cast<MaterialOrder>(sort_tabs_->tabData(sort_tabs_->currentIndex()).toInt()));
     table->setRowCount(static_cast<int>(found.size()));
     int row = 0;
     for (const Material& material : found) {
