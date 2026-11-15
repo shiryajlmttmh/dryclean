@@ -33,7 +33,7 @@ enum BatchColumn {
 };
 
 constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{"Машина", "Услуга", "Изделия", "Масса, кг",
-                                                                  "Загрузка", "Начало", "Конец обработки"};
+                                                                  "Загрузка", "Начало", "До конца обработки"};
 
 enum UnplacedColumn { UnplacedItem, UnplacedReason, UnplacedColumnCount };
 
@@ -122,6 +122,7 @@ void PlanningTab::show_summary() {
 }
 
 void PlanningTab::show_batches() {
+    const TimePoint now = qt_convert::now();
     const std::size_t count = plan_ ? plan_->batches.size() : 0;
     batches_table_->setRowCount(static_cast<int>(count));
     for (std::size_t index = 0; index < count; ++index) {
@@ -133,7 +134,7 @@ void PlanningTab::show_batches() {
         set_cell(batches_table_, row, BatchWeight, QString::number(batch.total_weight_kg, 'f', kWeightDecimals), true);
         set_cell(batches_table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio)), true);
         set_cell(batches_table_, row, BatchStart, qt_convert::format_time(batch.planned_start_at));
-        set_cell(batches_table_, row, BatchReady, qt_convert::format_time(batch.planned_ready_at));
+        set_cell(batches_table_, row, BatchReady, qt_convert::format_time_remaining(batch.planned_ready_at, now));
     }
 }
 

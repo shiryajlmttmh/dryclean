@@ -211,6 +211,7 @@ void MainWindow::refresh() {
 }
 
 void MainWindow::refresh_clock_views() {
+    planning_tab_->refresh();
     batches_tab_->refresh();
     machines_tab_->refresh();
     refresh_orders();

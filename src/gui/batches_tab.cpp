@@ -49,7 +49,7 @@ bool matches_filter(const Batch& batch, int filter) {
 }
 
 constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{
-    "№", "Машина", "Услуга", "Изделия", "Масса, кг", "Загрузка", "Начало", "Конец обработки", "Статус", "Завершена"};
+    "№", "Машина", "Услуга", "Изделия", "Масса, кг", "Загрузка", "Начало", "До конца обработки", "Статус", "Завершена"};
 
 }
 
@@ -113,7 +113,10 @@ void BatchesTab::fill_row(int row, const Batch& batch, TimePoint now) {
     set_cell(table_, row, BatchWeight, QString::number(batch.total_weight_kg(), 'f', kWeightDecimals), true);
     set_cell(table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio())), true);
     set_cell(table_, row, BatchStart, qt_convert::format_time(batch.planned_start_at()));
-    set_cell(table_, row, BatchReady, qt_convert::format_time(batch.planned_ready_at()));
+    const QString remaining = batch.status() == BatchStatus::Completed
+        ? QStringLiteral("Завершена, %1").arg(qt_convert::format_time(batch.planned_ready_at()))
+        : qt_convert::format_time_remaining(batch.planned_ready_at(), now);
+    set_cell(table_, row, BatchReady, remaining);
     set_cell(table_, row, BatchStatusName, status_text(batch, now));
     set_cell(table_, row, BatchCompleted, qt_convert::format_time(batch.completed_at()));
 }
