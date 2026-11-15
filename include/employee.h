@@ -21,6 +21,10 @@ public:
     void set_name(std::string name);
     void set_login(std::string login);
     void set_role(EmployeeRole role);
+    void set_password(const std::string& password);
+    void copy_password_from(const Employee& employee);
+    bool has_password() const noexcept;
+    bool check_password(const std::string& password) const;
 
     bool has_permission(Permission permission) const noexcept;
     static std::set<Permission> permissions_for(EmployeeRole role);
@@ -36,5 +40,6 @@ private:
     Id id_ = 0;
     std::string name_;
     std::string login_;
+    std::string password_hash_;
     EmployeeRole role_ = EmployeeRole::Receptionist;
 };

@@ -20,6 +20,9 @@ protected:
 private:
     QLineEdit* name_edit_;
     QLineEdit* login_edit_;
+    QLineEdit* password_edit_;
+    QLineEdit* confirmation_edit_;
     QComboBox* role_box_;
+    Employee initial_;
     Apply apply_;
 };

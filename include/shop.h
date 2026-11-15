@@ -53,7 +53,9 @@ public:
     Revision revision() const noexcept;
     bool is_dirty() const noexcept;
 
-    const Employee& authenticate(const std::string& login) const;
+    const Employee& authenticate(const std::string& login, const std::string& password) const;
+    bool needs_password_setup() const noexcept;
+    void initialize_admin_password(const std::string& login, const std::string& password);
     void require_permission(Id employee_id, Permission permission) const;
 
     Id add_employee(Employee employee, Id acting_employee);

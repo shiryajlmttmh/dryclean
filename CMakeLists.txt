@@ -12,6 +12,7 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
 add_library(core STATIC
+    src/password.cpp
     src/types.cpp
     src/pricing.cpp
     src/services.cpp
@@ -34,6 +35,12 @@ add_library(core STATIC
     src/display.cpp
 )
 target_include_directories(core PUBLIC include)
+if(WIN32)
+    target_link_libraries(core PRIVATE bcrypt)
+else()
+    find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+    target_link_libraries(core PRIVATE OpenSSL::Crypto)
+endif()
 
 add_executable(dryclean
     src/main.cpp

@@ -352,14 +352,48 @@ Revision DryCleaningShop::revision() const noexcept { return revision_; }
 
 bool DryCleaningShop::is_dirty() const noexcept { return dirty_; }
 
-const Employee& DryCleaningShop::authenticate(const std::string& login) const {
+const Employee& DryCleaningShop::authenticate(const std::string& login, const std::string& password) const {
     const std::string key = normalize_login(login);
     for (const Employee& employee : employees_) {
-        if (employee.login() == key) {
+        if (employee.login() == key && employee.check_password(password)) {
             return employee;
         }
     }
-    throw InvalidInputException("login", "сотрудник с таким логином не найден");
+    throw InvalidInputException("login", "неверный логин или пароль");
+}
+
+bool DryCleaningShop::needs_password_setup() const noexcept {
+    return std::none_of(employees_.begin(), employees_.end(), [](const Employee& employee) {
+        return employee.has_password();
+    });
+}
+
+void DryCleaningShop::initialize_admin_password(const std::string& login, const std::string& password) {
+    if (!loaded_ || !needs_password_setup()) {
+        throw InvalidInputException("password", "первичная настройка пароля недоступна");
+    }
+    const std::string key = normalize_login(login);
+    Repository<Employee> updated = employees_;
+    const auto admin = std::find_if(updated.begin(), updated.end(), [&key](const Employee& employee) {
+        return employee.login() == key && employee.role() == EmployeeRole::Administrator;
+    });
+    if (admin == updated.end()) {
+        throw InvalidInputException("login", "для первичной настройки укажите логин администратора");
+    }
+    begin_mutation(admin->id(), Permission::ManageStaff);
+    admin->set_password(password);
+    const Revision previous_revision = revision_;
+    const bool previous_dirty = dirty_;
+    employees_.swap(updated);
+    publish();
+    try {
+        save_all();
+    } catch (...) {
+        employees_.swap(updated);
+        revision_ = previous_revision;
+        dirty_ = previous_dirty;
+        throw;
+    }
 }
 
 void DryCleaningShop::require_permission(Id employee_id, Permission permission) const {
@@ -392,7 +426,7 @@ void DryCleaningShop::ensure_storage() {
 
 std::size_t DryCleaningShop::administrators_count() const {
     return static_cast<std::size_t>(std::count_if(employees_.begin(), employees_.end(), [](const Employee& employee) {
-        return employee.role() == EmployeeRole::Administrator;
+        return employee.role() == EmployeeRole::Administrator && employee.has_password();
     }));
 }
 
@@ -404,6 +438,9 @@ bool DryCleaningShop::has_scheduled_batch(Id machine_id) const {
 
 Id DryCleaningShop::add_employee(Employee employee, Id acting_employee) {
     begin_mutation(acting_employee, Permission::ManageStaff);
+    if (!employee.has_password()) {
+        throw InvalidInputException("password", "задайте пароль нового сотрудника");
+    }
     employee.validate();
     for (const Employee& other : employees_) {
         if (other.login() == employee.login()) {
@@ -424,6 +461,7 @@ void DryCleaningShop::update_employee(const Employee& employee, Id acting_employ
     updated.set_name(employee.name());
     updated.set_login(employee.login());
     updated.set_role(employee.role());
+    if (employee.has_password()) updated.copy_password_from(employee);
     updated.validate();
     for (const Employee& other : employees_) {
         if (other.id() != updated.id() && other.login() == updated.login()) {
