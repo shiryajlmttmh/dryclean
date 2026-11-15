@@ -425,9 +425,14 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         event->accept();
         return;
     }
-    const auto answer = QMessageBox::question(
-        this, QStringLiteral("Несохранённые изменения"), QStringLiteral("Сохранить изменения перед выходом?"),
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+    QMessageBox dialog(QMessageBox::Question, QStringLiteral("Несохранённые изменения"),
+                       QStringLiteral("Сохранить изменения перед выходом?"),
+                       QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, this);
+    dialog.button(QMessageBox::Save)->setText(QStringLiteral("Сохранить"));
+    dialog.button(QMessageBox::Discard)->setText(QStringLiteral("Не сохранять"));
+    dialog.button(QMessageBox::Cancel)->setText(QStringLiteral("Отмена"));
+    dialog.setDefaultButton(QMessageBox::Save);
+    const auto answer = static_cast<QMessageBox::StandardButton>(dialog.exec());
     if (answer == QMessageBox::Cancel) {
         event->ignore();
         return;

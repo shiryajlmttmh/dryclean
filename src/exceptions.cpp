@@ -1,6 +1,11 @@
 #include "exceptions.h"
 
+#include <format>
 #include <utility>
+
+namespace {
+constexpr int kStockAmountDecimals = 2;
+}
 
 ShopException::ShopException(const std::string& message) : std::runtime_error(message) {}
 
@@ -23,8 +28,8 @@ std::size_t FileFormatException::line() const noexcept { return line_; }
 std::string FileFormatException::title() const { return "Ошибка формата файла"; }
 
 OutOfStockException::OutOfStockException(std::string material_name, double required, double available)
-    : ShopException("Недостаточно материала «" + material_name + "»: требуется " + std::to_string(required) +
-                    ", доступно " + std::to_string(available)),
+    : ShopException(std::format("Недостаточно материала «{}»: требуется {:.{}f}, доступно {:.{}f}", material_name,
+                                required, kStockAmountDecimals, available, kStockAmountDecimals)),
       material_name_(std::move(material_name)),
       required_(required),
       available_(available) {}

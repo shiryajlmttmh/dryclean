@@ -12,11 +12,14 @@ void configure_table(QTableWidget* table, const QStringList& headers) {
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setAlternatingRowColors(true);
     table->verticalHeader()->setVisible(false);
-    table->horizontalHeader()->setStretchLastSection(true);
+    auto* header = table->horizontalHeader();
+    header->setSectionResizeMode(QHeaderView::ResizeToContents);
+    header->setStretchLastSection(true);
 }
 
 void set_cell(QTableWidget* table, int row, int column, const QString& text, bool right_aligned) {
     auto* item = new QTableWidgetItem(text);
+    item->setToolTip(text);
     if (right_aligned) {
         item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }

@@ -3,6 +3,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
+#include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -13,6 +14,9 @@
 namespace {
 
 constexpr int kDialogWidth = 380;
+constexpr int kDarkBackgroundLightnessThreshold = 128;
+constexpr const char* kErrorStyleOnDark = "color: #ff8585;";
+constexpr const char* kErrorStyleOnLight = "color: #a00020;";
 
 }
 
@@ -22,7 +26,8 @@ ApplyDialog::ApplyDialog(const QString& title, QWidget* parent) : QDialog(parent
 
     form_ = new QFormLayout;
     error_label_ = new QLabel(this);
-    error_label_->setStyleSheet(kErrorStyle);
+    const bool dark_background = palette().color(QPalette::Window).lightness() < kDarkBackgroundLightnessThreshold;
+    error_label_->setStyleSheet(dark_background ? kErrorStyleOnDark : kErrorStyleOnLight);
     error_label_->setWordWrap(true);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -44,6 +49,14 @@ void ApplyDialog::try_accept() {
     try {
         apply();
         accept();
+    } catch (const InvalidInputException& error) {
+        QString field;
+        if (error.field_name() == "name") field = QStringLiteral("Имя");
+        else if (error.field_name() == "phone") field = QStringLiteral("Телефон");
+        else if (error.field_name() == "discount") field = QStringLiteral("Скидка");
+        const QString message = qt_convert::text(error.what());
+        const bool field_in_message = !field.isEmpty() && message.startsWith(field, Qt::CaseInsensitive);
+        error_label_->setText(field.isEmpty() || field_in_message ? message : field + QStringLiteral(": ") + message);
     } catch (const ShopException& error) {
         error_label_->setText(qt_convert::text(error.what()));
     }

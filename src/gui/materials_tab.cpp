@@ -127,11 +127,16 @@ void MaterialsTab::change_stock(const QString& title, const QString& prompt,
     if (!id) {
         return;
     }
-    bool confirmed = false;
-    const double amount =
-        QInputDialog::getDouble(this, title, prompt.arg(qt_convert::text(shop_.materials().get(*id).unit())),
-                                kDefaultAmount, kMinAmount, kMaxAmount, kStockDecimals, &confirmed);
-    if (confirmed && run_guarded(this, [&] { apply(*id, amount); })) {
+    QInputDialog dialog(this);
+    dialog.setWindowTitle(title);
+    dialog.setLabelText(prompt.arg(qt_convert::text(shop_.materials().get(*id).unit())));
+    dialog.setInputMode(QInputDialog::DoubleInput);
+    dialog.setDoubleRange(kMinAmount, kMaxAmount);
+    dialog.setDoubleDecimals(kStockDecimals);
+    dialog.setDoubleValue(kDefaultAmount);
+    dialog.setOkButtonText(QStringLiteral("ОК"));
+    dialog.setCancelButtonText(QStringLiteral("Отмена"));
+    if (dialog.exec() == QDialog::Accepted && run_guarded(this, [&] { apply(*id, dialog.doubleValue()); })) {
         emit changed();
     }
 }

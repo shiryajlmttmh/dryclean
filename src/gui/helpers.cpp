@@ -1,5 +1,6 @@
 #include "gui/helpers.h"
 
+#include <QAbstractButton>
 #include <QDoubleSpinBox>
 #include <QGroupBox>
 #include <QListWidget>
@@ -44,7 +45,10 @@ bool run_guarded(QWidget* parent, const std::function<void()>& action) {
 }
 
 bool confirm(QWidget* parent, const QString& title, const QString& text) {
-    return QMessageBox::question(parent, title, text) == QMessageBox::Yes;
+    QMessageBox dialog(QMessageBox::Question, title, text, QMessageBox::Yes | QMessageBox::No, parent);
+    dialog.button(QMessageBox::Yes)->setText(QStringLiteral("Да"));
+    dialog.button(QMessageBox::No)->setText(QStringLiteral("Нет"));
+    return dialog.exec() == QMessageBox::Yes;
 }
 
 bool has_permission(const DryCleaningShop& shop, Id employee_id, Permission permission) {
