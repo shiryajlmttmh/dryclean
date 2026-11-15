@@ -59,6 +59,19 @@ std::optional<Id> selected_id(const QTableWidget* table, int id_column) {
     return static_cast<Id>(table->item(row, id_column)->text().toUInt());
 }
 
+void restore_selected_id(QTableWidget* table, int id_column, std::optional<Id> id) {
+    table->setCurrentCell(kNoRow, kNoRow);
+    table->clearSelection();
+    if (!id) return;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (table->item(row, id_column)->text().toUInt() == *id) {
+            table->setCurrentCell(row, id_column);
+            table->selectRow(row);
+            return;
+        }
+    }
+}
+
 void set_row_position(QTableWidget* table, int row, std::size_t position) {
     table->item(row, kPositionColumn)->setData(kPositionRole, static_cast<qulonglong>(position));
 }

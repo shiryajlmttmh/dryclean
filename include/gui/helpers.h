@@ -20,6 +20,7 @@ bool run_guarded(QWidget* parent, const std::function<void()>& action);
 bool confirm(QWidget* parent, const QString& title, const QString& text);
 bool has_permission(const DryCleaningShop& shop, Id employee_id, Permission permission);
 std::optional<Id> selected_id(const QTableWidget* table, int id_column);
+void restore_selected_id(QTableWidget* table, int id_column, std::optional<Id> id);
 void set_row_position(QTableWidget* table, int row, std::size_t position);
 std::optional<std::size_t> selected_position(const QTableWidget* table, std::size_t count);
 void add_positioned_item(QListWidget* list, const QString& text, std::size_t position);

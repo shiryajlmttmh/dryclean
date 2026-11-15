@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
@@ -147,7 +148,7 @@ void OrderDialog::refresh() {
 
 void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
     const std::optional<std::size_t> selected = selected_position(items_table_, items_.size());
-    items_table_->blockSignals(true);
+    const QSignalBlocker blocker(items_table_);
     items_table_->setRowCount(static_cast<int>(items_.size()));
     for (std::size_t index = 0; index < items_.size(); ++index) {
         const Item& item = items_[index];
@@ -165,7 +166,6 @@ void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
             items_table_->selectRow(row);
         }
     }
-    items_table_->blockSignals(false);
 }
 
 void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {

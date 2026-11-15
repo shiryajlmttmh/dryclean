@@ -722,14 +722,11 @@ std::vector<Material> DryCleaningShop::find_materials(const std::string& query, 
     std::vector<Material> result = materials_.find_if([&key](const Material& material) {
         return key.empty() || to_lower_text(material.name()).find(key) != std::string::npos;
     });
-    std::sort(result.begin(), result.end(), [order](const Material& left, const Material& right) {
+    std::stable_sort(result.begin(), result.end(), [order](const Material& left, const Material& right) {
         if (order == MaterialOrder::ByStock && left.stock() != right.stock()) {
             return left.stock() < right.stock();
         }
-        if (order == MaterialOrder::ByName && left.name() != right.name()) {
-            return left.name() < right.name();
-        }
-        return left.id() < right.id();
+        return to_lower_text(left.name()) < to_lower_text(right.name());
     });
     return result;
 }

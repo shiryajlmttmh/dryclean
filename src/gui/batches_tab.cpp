@@ -3,9 +3,11 @@
 #include <QTabBar>
 #include <QHBoxLayout>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
+#include <algorithm>
 #include <vector>
 
 #include "display.h"
@@ -90,7 +92,11 @@ void BatchesTab::refresh() {
             shown.push_back(&batch);
         }
     }
-    table_->blockSignals(true);
+    std::stable_sort(shown.begin(), shown.end(), [](const Batch* left, const Batch* right) {
+        return left->planned_start_at() < right->planned_start_at();
+    });
+    const QSignalBlocker blocker(table_);
+    table_->setCurrentCell(-1, -1);
     table_->setRowCount(static_cast<int>(shown.size()));
     const TimePoint now = qt_convert::now();
     int row = 0;
@@ -101,7 +107,6 @@ void BatchesTab::refresh() {
         }
         ++row;
     }
-    table_->blockSignals(false);
     update_buttons();
 }
 

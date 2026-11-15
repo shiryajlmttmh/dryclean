@@ -12,12 +12,14 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTimer>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
+#include <algorithm>
 
 #include "display.h"
 #include "exceptions.h"
@@ -227,7 +229,12 @@ void MainWindow::update_client_buttons() {
 
 void MainWindow::refresh_clients() {
     run_guarded(this, [this] {
-        const std::vector<Client> found = shop_.search_clients(client_search_->text().toStdString());
+        const auto id = selected_id(clients_table_, ClientId);
+        const QSignalBlocker blocker(clients_table_);
+        std::vector<Client> found = shop_.search_clients(client_search_->text().toStdString());
+        std::stable_sort(found.begin(), found.end(), [](const Client& left, const Client& right) {
+            return QString::localeAwareCompare(qt_convert::text(left.name()), qt_convert::text(right.name())) < 0;
+        });
         clients_table_->setRowCount(static_cast<int>(found.size()));
         int row = 0;
         for (const Client& client : found) {
@@ -238,6 +245,7 @@ void MainWindow::refresh_clients() {
             set_cell(clients_table_, row, ClientOrders, QString::number(client.orders_count()));
             ++row;
         }
+        restore_selected_id(clients_table_, ClientId, id);
     });
     update_client_buttons();
 }
@@ -255,7 +263,12 @@ std::vector<Order> MainWindow::filtered_orders() const {
 
 void MainWindow::refresh_orders() {
     run_guarded(this, [this] {
-        const std::vector<Order> shown = filtered_orders();
+        const auto id = selected_id(orders_table_, OrderId);
+        const QSignalBlocker blocker(orders_table_);
+        std::vector<Order> shown = filtered_orders();
+        std::stable_sort(shown.begin(), shown.end(), [](const Order& left, const Order& right) {
+            return left.created_at() < right.created_at();
+        });
         orders_table_->setRowCount(static_cast<int>(shown.size()));
         int row = 0;
         for (const Order& order : shown) {
@@ -272,6 +285,7 @@ void MainWindow::refresh_orders() {
             set_cell(orders_table_, row, OrderReady, qt_convert::format_time(order.planned_ready_at()));
             ++row;
         }
+        restore_selected_id(orders_table_, OrderId, id);
     });
     update_order_buttons();
 }

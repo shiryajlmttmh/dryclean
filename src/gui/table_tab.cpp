@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -36,7 +37,10 @@ TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission,
 }
 
 void TableTab::refresh() {
+    const auto id = selected();
+    const QSignalBlocker blocker(table_);
     fill(table_);
+    restore_selected_id(table_, kIdColumn, id);
     update_buttons();
 }
 

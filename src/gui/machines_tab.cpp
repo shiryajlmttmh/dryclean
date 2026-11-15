@@ -137,7 +137,12 @@ void MachinesTab::fill(QTableWidget* table) {
     table->setRowCount(static_cast<int>(shop_.machines().size()));
     const TimePoint now = qt_convert::now();
     int row = 0;
-    for (const Machine& machine : shop_.machines()) {
+    std::vector<Machine> machines(shop_.machines().begin(), shop_.machines().end());
+    std::stable_sort(machines.begin(), machines.end(), [](const Machine& left, const Machine& right) {
+        if (left.free_at() != right.free_at()) return left.free_at() < right.free_at();
+        return QString::localeAwareCompare(qt_convert::text(left.name()), qt_convert::text(right.name())) < 0;
+    });
+    for (const Machine& machine : machines) {
         set_cell(table, row, MachineId, QString::number(machine.id()), true);
         set_cell(table, row, MachineName, qt_convert::text(machine.name()));
         set_cell(table, row, MachineType, qt_convert::text(display_name(machine.type())));

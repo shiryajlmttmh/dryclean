@@ -2,6 +2,7 @@
 
 #include <QTableWidget>
 #include <array>
+#include <algorithm>
 
 #include "display.h"
 #include "gui/employee_dialog.h"
@@ -22,7 +23,11 @@ EmployeesTab::EmployeesTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
 void EmployeesTab::fill(QTableWidget* table) {
     table->setRowCount(static_cast<int>(shop_.employees().size()));
     int row = 0;
-    for (const Employee& employee : shop_.employees()) {
+    std::vector<Employee> employees(shop_.employees().begin(), shop_.employees().end());
+    std::stable_sort(employees.begin(), employees.end(), [](const Employee& left, const Employee& right) {
+        return QString::localeAwareCompare(qt_convert::text(left.name()), qt_convert::text(right.name())) < 0;
+    });
+    for (const Employee& employee : employees) {
         set_cell(table, row, EmployeeId, QString::number(employee.id()), true);
         set_cell(table, row, EmployeeName, qt_convert::text(employee.name()));
         set_cell(table, row, EmployeeLogin, qt_convert::text(employee.login()));

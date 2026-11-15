@@ -4,9 +4,11 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
+#include <algorithm>
 
 #include "display.h"
 #include "gui/helpers.h"
@@ -80,10 +82,16 @@ void OrderItemsDialog::refresh() {
                                      qt_convert::text(format_money(order.total_cost())),
                                      qt_convert::format_time(order.deadline())));
     const std::optional<Id> selected = selected_id(table_, ItemId);
-    table_->blockSignals(true);
+    const QSignalBlocker blocker(table_);
     table_->setRowCount(static_cast<int>(order.item_ids().size()));
     int row = 0;
-    for (const Id id : order.item_ids()) {
+    std::vector<Id> item_ids = order.item_ids();
+    std::stable_sort(item_ids.begin(), item_ids.end(), [this](Id left, Id right) {
+        return QString::localeAwareCompare(qt_convert::text(shop_.items().get(left).tag()),
+                                           qt_convert::text(shop_.items().get(right).tag())) < 0;
+    });
+    table_->setCurrentCell(-1, -1);
+    for (const Id id : item_ids) {
         const Item& item = shop_.items().get(id);
         set_cell(table_, row, ItemId, QString::number(id), true);
         set_cell(table_, row, ItemTag, qt_convert::text(item.tag()));
@@ -99,7 +107,6 @@ void OrderItemsDialog::refresh() {
         }
         ++row;
     }
-    table_->blockSignals(false);
     edit_button_->setEnabled(can_edit() && selected_id(table_, ItemId).has_value());
 }
 
