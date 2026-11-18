@@ -1,6 +1,7 @@
 #include "gui/machines_tab.h"
 
 #include <QTableWidget>
+#include <QDateTimeEdit>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QTextDocument>
@@ -27,7 +28,6 @@ constexpr int kCapacityDecimals = 1;
 constexpr int kMaintenanceDecimals = 1;
 constexpr int kHistoryWindowWidth = 1000;
 constexpr int kHistoryWindowHeight = 560;
-constexpr int kTimelineHoursAhead = 24;
 constexpr int kHoursPerDay = 24;
 constexpr double kTimelineWidth = 900.0;
 constexpr double kTimelineTop = 30.0;
@@ -45,6 +45,36 @@ constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Н
                                                                       "Доступность", "До ТО, ч (с учётом плана)"};
 constexpr std::array<const char*, HistoryColumnCount> kHistoryHeaders{
     "Партия", "Начало", "Конец обработки", "Статус", "Подтверждение завершения"};
+
+void draw_timeline(QGraphicsScene& scene, const std::vector<const Batch*>& history, TimePoint center) {
+    scene.clear();
+    const TimePoint start = add_hours(center, -kHoursPerDay);
+    const TimePoint end = add_hours(center, kHoursPerDay);
+    const double span = hours_between(end, start);
+    scene.addRect(0.0, kTimelineTop, kTimelineWidth, kTimelineHeight,
+                  QPen(Qt::NoPen), QBrush(QColor(kFreeTimeColor)));
+    for (const Batch* batch : history) {
+        const TimePoint visible_start = std::max(start, batch->planned_start_at());
+        const TimePoint visible_end = std::min(end, batch->planned_ready_at());
+        if (visible_end <= visible_start) continue;
+
+        const double batch_start_offset = hours_between(visible_start, start) / span * kTimelineWidth;
+        const double width = hours_between(visible_end, visible_start) / span * kTimelineWidth;
+        const double block_width = std::min(std::max(width, kMinimumBatchWidth), kTimelineWidth - batch_start_offset);
+        const QColor color(batch->status() == BatchStatus::Completed ? kCompletedBatchColor : kScheduledBatchColor);
+        auto* block = scene.addRect(batch_start_offset, kTimelineTop, block_width, kTimelineHeight,
+                                    QPen(Qt::NoPen), QBrush(color));
+        block->setToolTip(QStringLiteral("Партия №%1\n%2 — %3")
+                             .arg(batch->id()).arg(qt_convert::format_time(batch->planned_start_at()),
+                                                  qt_convert::format_time(batch->planned_ready_at())));
+    }
+    auto* start_label = scene.addText(qt_convert::format_time(start));
+    start_label->document()->setDocumentMargin(0.0);
+    start_label->setPos(0.0, 0.0);
+    auto* end_label = scene.addText(qt_convert::format_time(end));
+    end_label->document()->setDocumentMargin(0.0);
+    end_label->setPos(kTimelineWidth - end_label->boundingRect().width(), 0.0);
+}
 
 }
 
@@ -89,36 +119,29 @@ void MachinesTab::show_history() {
     dialog.setWindowTitle(QStringLiteral("Занятость — ") + qt_convert::text(machine.name()));
     dialog.resize(kHistoryWindowWidth, kHistoryWindowHeight);
     auto* layout = new QVBoxLayout(&dialog);
+    auto* date_edit = new QDateTimeEdit(QDateTime::currentDateTime(), &dialog);
+    date_edit->setDisplayFormat(QStringLiteral("dd.MM.yyyy HH:mm"));
+    date_edit->setCalendarPopup(true);
+    auto* now_button = new QPushButton(QStringLiteral("Сейчас"), &dialog);
+    auto* date_controls = new QHBoxLayout;
+    date_controls->addWidget(new QLabel(QStringLiteral("Центр шкалы:"), &dialog));
+    date_controls->addWidget(date_edit);
+    date_controls->addWidget(now_button);
+    date_controls->addStretch();
+    layout->addLayout(date_controls);
     layout->addWidget(new QLabel(QStringLiteral(
         "Зелёный — свободна · синий — завершённая обработка · оранжевый — запланированная обработка"), &dialog));
     auto* scene = new QGraphicsScene(&dialog);
     auto* view = new QGraphicsView(scene, &dialog);
     layout->addWidget(view);
-    const TimePoint now = qt_convert::now();
-    const TimePoint start = history.empty() ? now : std::min(now, history.front()->planned_start_at());
-    TimePoint end = add_hours(now, kTimelineHoursAhead);
-    for (const Batch* batch : history) end = std::max(end, batch->planned_ready_at());
-    const double span = hours_between(end, start);
-    scene->addRect(0.0, kTimelineTop, kTimelineWidth, kTimelineHeight,
-                   QPen(Qt::NoPen), QBrush(QColor(kFreeTimeColor)));
-    for (const Batch* batch : history) {
-        const double batch_start_offset =
-            hours_between(batch->planned_start_at(), start) / span * kTimelineWidth;
-        const double width = hours_between(batch->planned_ready_at(), batch->planned_start_at()) / span * kTimelineWidth;
-        const QColor color(batch->status() == BatchStatus::Completed ? kCompletedBatchColor : kScheduledBatchColor);
-        auto* block = scene->addRect(batch_start_offset, kTimelineTop,
-                                    std::max(width, kMinimumBatchWidth), kTimelineHeight,
-                                    QPen(Qt::NoPen), QBrush(color));
-        block->setToolTip(QStringLiteral("Партия №%1\n%2 — %3")
-                             .arg(batch->id()).arg(qt_convert::format_time(batch->planned_start_at()),
-                                                  qt_convert::format_time(batch->planned_ready_at())));
-    }
-    auto* start_label = scene->addText(qt_convert::format_time(start));
-    start_label->document()->setDocumentMargin(0.0);
-    start_label->setPos(0.0, 0.0);
-    auto* end_label = scene->addText(qt_convert::format_time(end));
-    end_label->document()->setDocumentMargin(0.0);
-    end_label->setPos(kTimelineWidth - end_label->boundingRect().width(), 0.0);
+    const auto update_timeline = [scene, &history](const QDateTime& date_time) {
+        draw_timeline(*scene, history, from_epoch_ms(date_time.toMSecsSinceEpoch()));
+    };
+    connect(date_edit, &QDateTimeEdit::dateTimeChanged, &dialog, update_timeline);
+    connect(now_button, &QPushButton::clicked, &dialog, [date_edit] {
+        date_edit->setDateTime(QDateTime::currentDateTime());
+    });
+    update_timeline(date_edit->dateTime());
     auto* table = new QTableWidget(&dialog);
     configure_table(table, make_headers(kHistoryHeaders));
     table->setRowCount(static_cast<int>(history.size()));
