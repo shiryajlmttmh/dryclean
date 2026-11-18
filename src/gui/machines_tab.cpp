@@ -3,6 +3,7 @@
 #include <QTableWidget>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QTextDocument>
 #include <QGraphicsScene>
 #include <QGraphicsRectItem>
 #include <QGraphicsTextItem>
@@ -31,7 +32,6 @@ constexpr int kHoursPerDay = 24;
 constexpr double kTimelineWidth = 900.0;
 constexpr double kTimelineTop = 30.0;
 constexpr double kTimelineHeight = 42.0;
-constexpr double kTimelineLabelWidth = 150.0;
 constexpr double kMinimumBatchWidth = 1.0;
 constexpr auto kFreeTimeColor = "#86cfa5";
 constexpr auto kCompletedBatchColor = "#5d9bd3";
@@ -113,8 +113,12 @@ void MachinesTab::show_history() {
                              .arg(batch->id()).arg(qt_convert::format_time(batch->planned_start_at()),
                                                   qt_convert::format_time(batch->planned_ready_at())));
     }
-    scene->addText(qt_convert::format_time(start))->setPos(0.0, 0.0);
-    scene->addText(qt_convert::format_time(end))->setPos(kTimelineWidth - kTimelineLabelWidth, 0.0);
+    auto* start_label = scene->addText(qt_convert::format_time(start));
+    start_label->document()->setDocumentMargin(0.0);
+    start_label->setPos(0.0, 0.0);
+    auto* end_label = scene->addText(qt_convert::format_time(end));
+    end_label->document()->setDocumentMargin(0.0);
+    end_label->setPos(kTimelineWidth - end_label->boundingRect().width(), 0.0);
     auto* table = new QTableWidget(&dialog);
     configure_table(table, make_headers(kHistoryHeaders));
     table->setRowCount(static_cast<int>(history.size()));
