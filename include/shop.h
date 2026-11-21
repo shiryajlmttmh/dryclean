@@ -93,6 +93,7 @@ public:
 
     std::vector<PlanItem> collect_plan_items(TimePoint now) const;
     Plan build_plan(TimePoint now, Id acting_employee) const;
+    std::string plan_freshness_block(const Plan& plan, TimePoint now) const;
     void validate_plan(const Plan& plan, TimePoint now) const;
     std::vector<Id> confirm_plan(const Plan& plan, Id acting_employee, TimePoint now);
     std::string batch_start_block(Id batch_id, TimePoint now) const;

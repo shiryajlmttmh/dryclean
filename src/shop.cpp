@@ -1236,16 +1236,21 @@ void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const s
     }
 }
 
-std::vector<PlannedBatch> DryCleaningShop::verified_batches(const Plan& plan, TimePoint now) const {
+std::string DryCleaningShop::plan_freshness_block(const Plan& plan, TimePoint now) const {
     if (plan.source_revision != revision_) {
-        throw PlanningException("план устарел: данные изменились после его построения");
+        return "Данные изменились. Постройте план заново.";
     }
     if (now < plan.built_at) {
-        throw PlanningException("время подтверждения раньше времени построения плана, проверьте часы компьютера");
+        return "Время компьютера изменилось. Проверьте часы и постройте план заново.";
     }
     if (now - plan.built_at > kPlanLifetime) {
-        throw PlanningException("план построен слишком давно, перестройте его");
+        return "Срок действия плана истёк. Постройте план заново.";
     }
+    return {};
+}
+
+std::vector<PlannedBatch> DryCleaningShop::verified_batches(const Plan& plan, TimePoint now) const {
+    if (const auto block = plan_freshness_block(plan, now); !block.empty()) throw PlanningException(block);
     const std::vector<PlanItem> candidates = collect_plan_items(now);
     PlanClaims claims(candidates);
     for (const auto& entry : plan.unplaced) {
