@@ -15,8 +15,13 @@ namespace {
 
 std::string phone_query_digits(const std::string& query) {
     std::string digits;
-    for (const char c : query) {
-        if (c == ' ' || c == '(' || c == ')' || c == '-' || (c == '+' && digits.empty())) {
+    std::string_view text = query;
+    const auto start = text.find_first_not_of(' ');
+    if (start == std::string_view::npos) return {};
+    text.remove_prefix(start);
+    if (text.starts_with('+')) text.remove_prefix(1);
+    for (const char c : text) {
+        if (c == ' ' || c == '(' || c == ')' || c == '-') {
             continue;
         }
         if (c < '0' || c > '9') {
@@ -53,7 +58,7 @@ void Client::set_name(std::string name) {
     name_ = std::move(name);
 }
 
-void Client::set_phone(std::string phone) { phone_ = normalize_phone(std::move(phone)); }
+void Client::set_phone(std::string phone) { phone_ = normalize_phone(phone); }
 
 void Client::set_discount(double discount) {
     check_discount(discount);

@@ -37,6 +37,7 @@
 #include "gui/qt_convert.h"
 #include "gui/table_tab.h"
 #include "gui/table_utils.h"
+#include "normalize.h"
 
 namespace {
 
@@ -227,7 +228,8 @@ void MainWindow::refresh_clients() {
         for (const Client& client : found) {
             set_cell(clients_table_, row, ClientId, client.id());
             set_cell(clients_table_, row, ClientName, qt_convert::text(client.name()));
-            set_cell(clients_table_, row, ClientPhone, qt_convert::text(client.phone()));
+            set_sortable_cell(clients_table_, row, ClientPhone, qt_convert::text(format_phone(client.phone())),
+                              qt_convert::text(client.phone()));
             set_sortable_cell(clients_table_, row, ClientDiscount, qt_convert::text(format_percent(client.discount())),
                               client.discount(), true);
             set_cell(clients_table_, row, ClientOrders, client.orders_count());
@@ -422,7 +424,7 @@ void MainWindow::edit_client(Id id) {
     }
     const Client current = shop_.clients().get(id);
     ClientDialog dialog(
-        QStringLiteral("Изменение клиента"), qt_convert::text(current.name()), qt_convert::text(current.phone()),
+        QStringLiteral("Изменение клиента"), qt_convert::text(current.name()), qt_convert::text(format_phone(current.phone())),
         current.discount(),
         [this, id](const QString& name, const QString& phone, double discount) {
             Client updated = shop_.clients().get(id);

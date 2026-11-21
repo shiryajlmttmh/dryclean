@@ -18,6 +18,7 @@
 #include "gui/helpers.h"
 #include "gui/qt_convert.h"
 #include "gui/table_utils.h"
+#include "normalize.h"
 
 namespace {
 
@@ -68,8 +69,9 @@ OrderDialog::OrderDialog(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 void OrderDialog::build_header(QFormLayout* form) {
     client_box_ = new QComboBox(this);
     for (const Client& client : shop_.search_clients(std::string())) {
-        client_box_->addItem(qt_convert::text(client.name()) + QStringLiteral(" — ") + qt_convert::text(client.phone()),
-                             static_cast<unsigned int>(client.id()));
+        const QString label = qt_convert::text(client.name()) + QStringLiteral(" — ") +
+                              qt_convert::text(format_phone(client.phone()));
+        client_box_->addItem(label, static_cast<unsigned int>(client.id()));
     }
 
     urgent_box_ = new QCheckBox(QStringLiteral("Срочный заказ"), this);
