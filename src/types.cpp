@@ -23,7 +23,7 @@ constexpr std::array kColor{"Light", "Dark"};
 constexpr std::array kSoil{"Light", "Medium", "Heavy"};
 constexpr std::array kStain{"Light", "Hard", "Special"};
 constexpr std::array kOrder{"Accepted", "InProgress", "Ready", "Issued"};
-constexpr std::array kBatch{"Scheduled", "Completed"};
+constexpr std::array kBatch{"Scheduled", "InProgress", "AwaitingConfirmation", "Completed"};
 constexpr std::array kRole{"Receptionist", "Operator", "Administrator"};
 
 template <class E, std::size_t N>

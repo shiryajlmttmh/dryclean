@@ -1,7 +1,6 @@
 #include "batch_planner.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <set>
 
@@ -9,7 +8,6 @@
 
 namespace {
 
-constexpr auto kPlanningDelay = std::chrono::minutes(1);
 constexpr std::size_t kMinBatchesToMerge = 2;
 
 const Machine* find_machine(const std::vector<Machine>& machines, Id id) {
@@ -82,9 +80,8 @@ std::optional<std::string> machine_shortage(const PlanItem& item, const std::vec
 std::map<Id, TimePoint> machine_availability(const Plan& plan, const std::vector<Machine>& machines,
                                              TimePoint now) {
     std::map<Id, TimePoint> result;
-    const TimePoint base = now + kPlanningDelay;
     for (const Machine& machine : machines) {
-        result[machine.id()] = std::max(base, machine.free_at());
+        result[machine.id()] = std::max(now, machine.free_at());
     }
     for (const PlannedBatch& batch : plan.batches) {
         TimePoint& slot = result[batch.machine_id];
@@ -251,10 +248,9 @@ std::optional<Id> BatchPlanner::pick_machine(ServiceType service, double weight,
 void BatchPlanner::reschedule(Plan& plan, const std::vector<PlanItem>& items, const std::vector<Machine>& machines,
                               TimePoint now) const {
     const auto by_id = index_items(items);
-    const TimePoint base = now + kPlanningDelay;
     std::map<Id, TimePoint> cursor;
     for (const Machine& machine : machines) {
-        cursor[machine.id()] = std::max(base, machine.free_at());
+        cursor[machine.id()] = std::max(now, machine.free_at());
     }
     for (PlannedBatch& batch : plan.batches) {
         Hours longest = 0.0;

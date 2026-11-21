@@ -39,9 +39,30 @@ TimePoint Batch::planned_start_at() const noexcept { return planned_start_at_; }
 
 TimePoint Batch::planned_ready_at() const noexcept { return planned_ready_at_; }
 
+std::chrono::milliseconds Batch::duration() const noexcept { return planned_ready_at_ - planned_start_at_; }
+
+TimePoint Batch::effective_start_at() const noexcept { return started_at_.value_or(planned_start_at_); }
+
+TimePoint Batch::expected_ready_at() const noexcept { return effective_start_at() + duration(); }
+
+TimePoint Batch::occupied_until() const noexcept { return completed_at_.value_or(expected_ready_at()); }
+
 Id Batch::created_by() const noexcept { return created_by_; }
 
-BatchStatus Batch::status() const noexcept { return status_; }
+BatchStatus Batch::status() const noexcept {
+    if (completed_at_) return BatchStatus::Completed;
+    return started_at_ ? BatchStatus::InProgress : BatchStatus::Scheduled;
+}
+
+BatchStatus Batch::status_at(TimePoint now) const noexcept {
+    const auto state = status();
+    if (state == BatchStatus::InProgress && now >= expected_ready_at()) return BatchStatus::AwaitingConfirmation;
+    return state;
+}
+
+std::optional<TimePoint> Batch::started_at() const noexcept { return started_at_; }
+
+std::optional<Id> Batch::started_by() const noexcept { return started_by_; }
 
 std::optional<TimePoint> Batch::completed_at() const noexcept { return completed_at_; }
 
@@ -49,15 +70,30 @@ std::optional<Id> Batch::completed_by() const noexcept { return completed_by_; }
 
 void Batch::set_id(Id id) noexcept { id_ = id; }
 
-void Batch::complete(Id employee_id, TimePoint now) {
-    if (status_ != BatchStatus::Scheduled) {
-        throw InvalidInputException("status", "партия уже завершена");
+void Batch::postpone_to(TimePoint start) noexcept {
+    if (status() != BatchStatus::Scheduled || start <= planned_start_at_) return;
+    planned_ready_at_ = start + duration();
+    planned_start_at_ = start;
+}
+
+void Batch::start(Id employee_id, TimePoint now) {
+    if (status() != BatchStatus::Scheduled) {
+        throw InvalidInputException("status", "партия уже была запущена");
     }
     check_nonzero_id("employee_id", employee_id);
-    if (now < planned_ready_at_) {
-        throw InvalidInputException("now", "партию нельзя завершить раньше планового времени готовности");
+    started_at_ = now;
+    started_by_ = employee_id;
+}
+
+void Batch::complete(Id employee_id, TimePoint now) {
+    if (status() == BatchStatus::Completed) {
+        throw InvalidInputException("status", "партия уже завершена");
     }
-    status_ = BatchStatus::Completed;
+    if (!started_at_) throw InvalidInputException("status", "сначала запустите партию");
+    check_nonzero_id("employee_id", employee_id);
+    if (now < expected_ready_at()) {
+        throw InvalidInputException("now", "подтвердить завершение можно после окончания цикла обработки");
+    }
     completed_at_ = now;
     completed_by_ = employee_id;
 }
@@ -85,21 +121,16 @@ void Batch::validate() const {
         throw InvalidInputException("planned_ready_at", "конец партии должен быть позже начала");
     }
     check_nonzero_id("created_by", created_by_);
-    if (!is_valid(status_)) {
-        throw InvalidInputException("status", "неизвестный статус партии");
+    if (started_at_.has_value() != started_by_.has_value()) {
+        throw InvalidInputException("started_at", "для запуска нужны время и сотрудник");
     }
-    if (status_ == BatchStatus::Scheduled) {
-        if (completed_at_ || completed_by_) {
-            throw InvalidInputException("status", "у незавершённой партии не должно быть данных о завершении");
-        }
-        return;
+    if (started_by_) check_nonzero_id("started_by", *started_by_);
+    if (completed_at_.has_value() != completed_by_.has_value() || (completed_at_ && !started_at_)) {
+        throw InvalidInputException("completed_at", "для завершения запущенной партии нужны время и сотрудник");
     }
-    if (!completed_at_ || !completed_by_) {
-        throw InvalidInputException("status", "у завершённой партии должны быть время и сотрудник");
-    }
-    check_nonzero_id("completed_by", *completed_by_);
-    if (*completed_at_ < planned_ready_at_) {
-        throw InvalidInputException("completed_at", "партия не может быть завершена раньше планового времени");
+    if (completed_by_) check_nonzero_id("completed_by", *completed_by_);
+    if (completed_at_ && *completed_at_ < expected_ready_at()) {
+        throw InvalidInputException("completed_at", "партия завершена раньше окончания цикла обработки");
     }
 }
 
@@ -121,7 +152,8 @@ std::ostream& operator<<(std::ostream& os, const Batch& batch) {
     writer.put_time(batch.planned_start_at_);
     writer.put_time(batch.planned_ready_at_);
     writer.put_id(batch.created_by_);
-    writer.put_token(to_string(batch.status_));
+    writer.put_optional_time(batch.started_at_);
+    writer.put_optional_id(batch.started_by_);
     writer.put_optional_time(batch.completed_at_);
     writer.put_optional_id(batch.completed_by_);
     return os << writer.str();
@@ -141,7 +173,8 @@ std::istream& operator>>(std::istream& is, Batch& batch) {
         value.planned_start_at_ = reader.get_time();
         value.planned_ready_at_ = reader.get_time();
         value.created_by_ = reader.get_id();
-        value.status_ = parse_BatchStatus(reader.get_token());
+        value.started_at_ = reader.get_optional_time();
+        value.started_by_ = reader.get_optional_id();
         value.completed_at_ = reader.get_optional_time();
         value.completed_by_ = reader.get_optional_id();
     });

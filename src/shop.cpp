@@ -28,7 +28,6 @@ TimePoint deadline_for(TimePoint start, Hours nominal_hours) {
     return add_hours(start, kHoursPerDay * std::ceil((nominal_hours + kStartReserveHours) / kHoursPerDay));
 }
 
-constexpr auto kPlanningDelay = std::chrono::minutes(1);
 constexpr auto kPlanLifetime = std::chrono::minutes(30);
 
 constexpr const char* kManifestName = "manifest.txt";
@@ -188,7 +187,7 @@ void check_items(const Repository<Item>& items, const Repository<Order>& orders,
             const Batch* completed = batches.find_by_id(batch_id);
             if (completed == nullptr || !completed->contains_item(item.id()) || !completed->completed_at() ||
                 completed->status() != BatchStatus::Completed ||
-                completed->planned_start_at() < previous_completion) {
+                completed->effective_start_at() < previous_completion) {
                 throw IntegrityException("нарушен порядок завершённых услуг изделия");
             }
             previous_completion = *completed->completed_at();
@@ -200,31 +199,36 @@ void check_items(const Repository<Item>& items, const Repository<Order>& orders,
         if (batch == nullptr || !batch->contains_item(item.id())) {
             throw IntegrityException("изделие ссылается на партию, которая его не содержит");
         }
-        if (!item.services_completed() && batch->planned_start_at() < previous_completion) {
+        if (!item.services_completed() && batch->effective_start_at() < previous_completion) {
             throw IntegrityException("услуга изделия начинается раньше завершения предыдущей");
         }
     }
 }
 
-void check_machine_queues(const Repository<Batch>& batches, const Repository<Machine>& machines) {
-    std::map<Id, std::vector<std::pair<TimePoint, TimePoint>>> queues;
-    std::map<Id, TimePoint> latest;
+std::map<Id, std::vector<const Batch*>> machine_queues(const Repository<Batch>& batches) {
+    std::map<Id, std::vector<const Batch*>> queues;
     for (const Batch& batch : batches) {
-        queues[batch.machine_id()].emplace_back(batch.planned_start_at(), batch.planned_ready_at());
-        TimePoint& slot = latest[batch.machine_id()];
-        slot = std::max(slot, batch.planned_ready_at());
+        queues[batch.machine_id()].push_back(&batch);
     }
-    for (auto& queue : queues) {
-        std::sort(queue.second.begin(), queue.second.end());
-        for (std::size_t i = 1; i < queue.second.size(); ++i) {
-            if (queue.second[i].first < queue.second[i - 1].second) {
+    for (auto& [id, queue] : queues) std::ranges::sort(queue, {}, &Batch::id);
+    return queues;
+}
+
+void check_machine_queues(const Repository<Batch>& batches, const Repository<Machine>& machines) {
+    for (const auto& [machine_id, queue] : machine_queues(batches)) {
+        TimePoint end{};
+        bool has_unfinished = false;
+        for (const Batch* batch : queue) {
+            if (batch->started_at() && has_unfinished) {
+                throw IntegrityException("партия запущена до подтверждения предыдущей партии машины");
+            }
+            if (batch->effective_start_at() < end) {
                 throw IntegrityException("партии одной машины пересекаются по времени");
             }
+            has_unfinished = has_unfinished || batch->status() != BatchStatus::Completed;
+            end = batch->occupied_until();
         }
-    }
-    for (const Machine& machine : machines) {
-        const auto found = latest.find(machine.id());
-        if (found != latest.end() && machine.free_at() < found->second) {
+        if (machines.get(machine_id).free_at() < end) {
             throw IntegrityException("машина освобождается раньше окончания своих партий");
         }
     }
@@ -356,7 +360,7 @@ void advance_orders(Repository<Order>& orders, const Repository<Item>& items, co
                 ready = std::nullopt;
                 break;
             }
-            ready = std::max(*ready, add_hours(batches.get(item.batch_id()).planned_ready_at(), finishing(item, order)));
+            ready = std::max(*ready, add_hours(batches.get(item.batch_id()).occupied_until(), finishing(item, order)));
         }
         order.set_planned_ready_at(ready);
         order.validate();
@@ -473,9 +477,9 @@ std::size_t DryCleaningShop::administrators_count() const {
     }));
 }
 
-bool DryCleaningShop::has_scheduled_batch(Id machine_id) const {
+bool DryCleaningShop::has_unfinished_batch(Id machine_id) const {
     return std::any_of(batches_.begin(), batches_.end(), [machine_id](const Batch& batch) {
-        return batch.machine_id() == machine_id && batch.status() == BatchStatus::Scheduled;
+        return batch.machine_id() == machine_id && batch.status() != BatchStatus::Completed;
     });
 }
 
@@ -543,8 +547,8 @@ void DryCleaningShop::update_machine(const Machine& machine, Id acting_employee)
     updated.set_maintenance_interval(machine.maintenance_interval());
     updated.validate();
     const bool changes_setup = updated.type() != current.type() || updated.capacity_kg() != current.capacity_kg();
-    if (changes_setup && has_scheduled_batch(current.id())) {
-        throw InvalidInputException("machine", "нельзя менять тип или вместимость при запланированных партиях");
+    if (changes_setup && has_unfinished_batch(current.id())) {
+        throw InvalidInputException("machine", "сначала завершите все партии машины, чтобы изменить тип или вместимость");
     }
     Repository<Machine> copy = machines_;
     replace_by_id(copy, updated);
@@ -556,7 +560,7 @@ void DryCleaningShop::update_machine(const Machine& machine, Id acting_employee)
 }
 
 bool DryCleaningShop::can_service_machine(Id machine_id, TimePoint now) const {
-    return machines_.get(machine_id).is_free_at(now) && !has_scheduled_batch(machine_id);
+    return machines_.get(machine_id).is_free_at(now) && !has_unfinished_batch(machine_id);
 }
 
 void DryCleaningShop::service_machine(Id machine_id, Id acting_employee, TimePoint now) {
@@ -633,7 +637,8 @@ bool DryCleaningShop::has_employee_records(Id employee_id) const {
                            [employee_id](const StatusRecord& record) { return record.employee_id() == employee_id; });
     });
     return in_orders || std::any_of(batches_.begin(), batches_.end(), [employee_id](const Batch& batch) {
-               return batch.created_by() == employee_id || batch.completed_by() == employee_id;
+               return batch.created_by() == employee_id || batch.started_by() == employee_id ||
+                      batch.completed_by() == employee_id;
            });
 }
 
@@ -1071,9 +1076,31 @@ Hours DryCleaningShop::finishing_hours(const Item& item, const Order& order) con
     return std::max(0.0, turnaround - selected.calculate_processing(item, order.is_urgent()));
 }
 
+std::map<Id, TimePoint> DryCleaningShop::forecast_machine_availability(TimePoint now) const {
+    std::map<Id, TimePoint> available;
+    for (const Machine& machine : machines_) available.emplace(machine.id(), now);
+    for (const auto& [machine_id, queue] : machine_queues(batches_)) {
+        TimePoint& slot = available.at(machine_id);
+        for (const Batch* batch : queue) {
+            if (batch->status() == BatchStatus::Scheduled) {
+                slot = std::max(slot, batch->planned_start_at()) + batch->duration();
+            } else {
+                slot = std::max(slot, batch->occupied_until());
+            }
+        }
+    }
+    for (const Machine& machine : machines_) {
+        auto& slot = available.at(machine.id());
+        slot = std::max(slot, machine.free_at());
+    }
+    return available;
+}
+
 Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
     require_permission(acting_employee, Permission::BuildPlan);
-    const std::vector<Machine> machines = machines_.find_if([](const Machine&) { return true; });
+    std::vector<Machine> machines(machines_.begin(), machines_.end());
+    const auto available = forecast_machine_availability(now);
+    for (Machine& machine : machines) machine.set_free_at(available.at(machine.id()));
     const std::vector<Material> materials = materials_.find_if([](const Material&) { return true; });
     Plan plan = planner_.build_plan(collect_plan_items(now), machines, materials, now, revision_);
     for (auto& entry : plan.order_ready_at) {
@@ -1089,7 +1116,7 @@ Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
             if (item.is_batched()) {
                 entry.second = std::max(
                     *entry.second,
-                    add_hours(batches_.get(item.batch_id()).planned_ready_at(), finishing_hours(item, orders_.get(entry.first))));
+                    add_hours(batches_.get(item.batch_id()).occupied_until(), finishing_hours(item, orders_.get(entry.first))));
             }
         }
     }
@@ -1185,11 +1212,8 @@ void DryCleaningShop::check_material_stock(const std::map<Id, double>& needed) c
 
 void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations,
                                      const Plan& plan) const {
-    std::map<Id, TimePoint> cursor;
+    auto cursor = forecast_machine_availability(plan.built_at);
     std::map<Id, Hours> work;
-    for (const Machine& machine : machines_) {
-        cursor[machine.id()] = std::max(plan.built_at + kPlanningDelay, machine.free_at());
-    }
     for (std::size_t i = 0; i < batches.size(); ++i) {
         work[batches[i].machine_id] += durations[i];
         if (work[batches[i].machine_id] > machines_.get(batches[i].machine_id).maintenance_remaining() + EPS) {
@@ -1198,6 +1222,12 @@ void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const s
         TimePoint& slot = cursor[batches[i].machine_id];
         batches[i].planned_start_at = slot;
         batches[i].planned_ready_at = add_hours(slot, durations[i]);
+        for (Id id : batches[i].item_ids) {
+            const auto& previous = items_.get(id).completed_batches();
+            if (!previous.empty() && slot < *batches_.get(previous.back()).completed_at()) {
+                throw PlanningException("этап начинается раньше завершения предыдущего", id);
+            }
+        }
         slot = batches[i].planned_ready_at;
         if (batches[i].planned_start_at != plan.batches[i].planned_start_at ||
             batches[i].planned_ready_at != plan.batches[i].planned_ready_at) {
@@ -1209,6 +1239,9 @@ void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const s
 std::vector<PlannedBatch> DryCleaningShop::verified_batches(const Plan& plan, TimePoint now) const {
     if (plan.source_revision != revision_) {
         throw PlanningException("план устарел: данные изменились после его построения");
+    }
+    if (now < plan.built_at) {
+        throw PlanningException("время подтверждения раньше времени построения плана, проверьте часы компьютера");
     }
     if (now - plan.built_at > kPlanLifetime) {
         throw PlanningException("план построен слишком давно, перестройте его");
@@ -1290,23 +1323,87 @@ std::vector<Id> DryCleaningShop::confirm_plan(const Plan& plan, Id acting_employ
     return created;
 }
 
+std::string DryCleaningShop::batch_start_block(Id batch_id, TimePoint now) const {
+    const Batch& batch = batches_.get(batch_id);
+    if (batch.status() != BatchStatus::Scheduled) return "Партия уже была запущена.";
+    for (const Batch& other : batches_) {
+        if (other.machine_id() != batch.machine_id()) continue;
+        if (other.status() == BatchStatus::InProgress) {
+            return "Сначала подтвердите завершение партии №" + std::to_string(other.id()) + ".";
+        }
+        if (other.id() < batch.id() && other.status() == BatchStatus::Scheduled) {
+            return "Перед этой партией в очереди есть партия №" + std::to_string(other.id()) + ".";
+        }
+        if (other.completed_at() && now < *other.completed_at()) {
+            return "Время запуска должно быть не раньше подтверждения предыдущей партии.";
+        }
+    }
+    for (Id id : batch.item_ids()) {
+        const Item& item = items_.get(id);
+        const auto& previous = item.completed_batches();
+        if (!previous.empty() && now < *batches_.get(previous.back()).completed_at()) {
+            return "Время запуска должно быть не раньше завершения предыдущего этапа изделия.";
+        }
+        const auto& history = orders_.get(item.order_id()).history();
+        if (now < history.back().timestamp()) {
+            return "Проверьте часы компьютера. Время запуска раньше последнего изменения статуса заказа.";
+        }
+    }
+    return {};
+}
+
+void DryCleaningShop::start_batch(Id batch_id, Id acting_employee, TimePoint now) {
+    begin_mutation(acting_employee, Permission::ChangeStatus);
+    const auto blocked = batch_start_block(batch_id, now);
+    if (!blocked.empty()) throw InvalidInputException("batch", blocked);
+    Batch updated = batches_.get(batch_id);
+    updated.start(acting_employee, now);
+    apply_batch_event(updated, acting_employee, now);
+}
+
 void DryCleaningShop::complete_batch(Id batch_id, Id acting_employee, TimePoint now) {
     begin_mutation(acting_employee, Permission::ChangeStatus);
     Batch updated = batches_.get(batch_id);
     updated.complete(acting_employee, now);
+    apply_batch_event(updated, acting_employee, now);
+}
+
+void DryCleaningShop::apply_batch_event(const Batch& updated, Id acting_employee, TimePoint now) {
     updated.validate();
     Repository<Batch> batches = batches_;
     replace_by_id(batches, updated);
     Repository<Item> items = items_;
     Repository<Order> orders = orders_;
+    Repository<Machine> machines = machines_;
+    std::set<Id> touched_orders;
     for (Id id : updated.item_ids()) {
         Item& item = items.get(id);
-        item.complete_service();
-        if (!item.services_completed()) orders.get(item.order_id()).set_planned_ready_at(std::nullopt);
+        if (updated.status() == BatchStatus::Completed) item.complete_service();
+        touched_orders.insert(item.order_id());
     }
+    std::vector<Batch*> waiting;
+    for (Batch& batch : batches) {
+        if (batch.machine_id() == updated.machine_id() && batch.status() == BatchStatus::Scheduled) {
+            waiting.push_back(&batch);
+        }
+    }
+    std::ranges::sort(waiting, {}, &Batch::id);
+    auto slot = updated.occupied_until();
+    for (Batch* batch : waiting) {
+        if (batch->planned_start_at() < slot) {
+            batch->postpone_to(slot);
+            for (Id id : batch->item_ids()) touched_orders.insert(items.get(id).order_id());
+        }
+        slot = batch->planned_ready_at();
+    }
+    machines.get(updated.machine_id()).set_free_at(slot);
+    advance_orders(orders, items, batches, touched_orders, [this](const Item& item, const Order& order) {
+        return finishing_hours(item, order);
+    }, acting_employee, now);
     batches_.swap(batches);
     items_.swap(items);
     orders_.swap(orders);
+    machines_.swap(machines);
     publish();
 }
 
@@ -1321,7 +1418,7 @@ void DryCleaningShop::check_batch(const Batch& batch, const Repository<Item>& it
     if (machine == nullptr) {
         throw IntegrityException("партия ссылается на несуществующую машину");
     }
-    if (!employees.contains(batch.created_by()) ||
+    if (!employees.contains(batch.created_by()) || (batch.started_by() && !employees.contains(*batch.started_by())) ||
         (batch.completed_by() && !employees.contains(*batch.completed_by()))) {
         throw IntegrityException("партия ссылается на несуществующего сотрудника");
     }
@@ -1365,9 +1462,6 @@ void DryCleaningShop::check_batch(const Batch& batch, const Repository<Item>& it
     }
     if (batch.planned_ready_at() != add_hours(batch.planned_start_at(), longest)) {
         throw IntegrityException("время окончания партии не совпадает с длительностью изделий");
-    }
-    if (batch.completed_at() && *batch.completed_at() < batch.planned_ready_at()) {
-        throw IntegrityException("партия завершена раньше планового окончания");
     }
 }
 

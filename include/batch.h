@@ -22,12 +22,21 @@ public:
     double fill_ratio() const noexcept;
     TimePoint planned_start_at() const noexcept;
     TimePoint planned_ready_at() const noexcept;
+    std::chrono::milliseconds duration() const noexcept;
+    TimePoint effective_start_at() const noexcept;
+    TimePoint expected_ready_at() const noexcept;
+    TimePoint occupied_until() const noexcept;
     Id created_by() const noexcept;
     BatchStatus status() const noexcept;
+    BatchStatus status_at(TimePoint now) const noexcept;
+    std::optional<TimePoint> started_at() const noexcept;
+    std::optional<Id> started_by() const noexcept;
     std::optional<TimePoint> completed_at() const noexcept;
     std::optional<Id> completed_by() const noexcept;
 
     void set_id(Id id) noexcept;
+    void postpone_to(TimePoint start) noexcept;
+    void start(Id employee_id, TimePoint now);
     void complete(Id employee_id, TimePoint now);
 
     bool contains_item(Id item_id) const noexcept;
@@ -49,7 +58,8 @@ private:
     TimePoint planned_start_at_{};
     TimePoint planned_ready_at_{};
     Id created_by_ = 0;
-    BatchStatus status_ = BatchStatus::Scheduled;
+    std::optional<TimePoint> started_at_;
+    std::optional<Id> started_by_;
     std::optional<TimePoint> completed_at_;
     std::optional<Id> completed_by_;
 };

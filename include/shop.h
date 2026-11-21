@@ -95,6 +95,8 @@ public:
     Plan build_plan(TimePoint now, Id acting_employee) const;
     void validate_plan(const Plan& plan, TimePoint now) const;
     std::vector<Id> confirm_plan(const Plan& plan, Id acting_employee, TimePoint now);
+    std::string batch_start_block(Id batch_id, TimePoint now) const;
+    void start_batch(Id batch_id, Id acting_employee, TimePoint now);
     void complete_batch(Id batch_id, Id acting_employee, TimePoint now);
 
     void save_all();
@@ -116,7 +118,9 @@ private:
     const Service& applicable_service(ServiceType type, const Item& item) const;
     double item_cost(const Item& item, bool urgent, double discount) const;
     Hours item_duration(const Item& item, bool urgent) const;
-    bool has_scheduled_batch(Id machine_id) const;
+    bool has_unfinished_batch(Id machine_id) const;
+    std::map<Id, TimePoint> forecast_machine_availability(TimePoint now) const;
+    void apply_batch_event(const Batch& updated, Id acting_employee, TimePoint now);
     class PlanClaims {
     public:
         explicit PlanClaims(const std::vector<PlanItem>& candidates);

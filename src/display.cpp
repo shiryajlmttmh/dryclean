@@ -21,7 +21,7 @@ constexpr std::array kColor{"Светлый", "Тёмный"};
 constexpr std::array kSoil{"Лёгкое", "Среднее", "Сильное"};
 constexpr std::array kStain{"Лёгкое", "Стойкое", "Особое"};
 constexpr std::array kOrder{"Принят", "В обработке", "Готов", "Выдан"};
-constexpr std::array kBatch{"Запланирована", "Завершена"};
+constexpr std::array kBatch{"Ожидает запуска", "В работе", "Ожидает подтверждения", "Завершена"};
 constexpr std::array kRole{"Приёмщик", "Оператор", "Администратор"};
 
 template <class E, std::size_t N>

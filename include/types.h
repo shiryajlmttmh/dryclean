@@ -19,7 +19,7 @@ enum class ColorGroup { Light, Dark };
 enum class SoilLevel { Light, Medium, Heavy };
 enum class StainClass { Light, Hard, Special };
 enum class OrderStatus { Accepted, InProgress, Ready, Issued };
-enum class BatchStatus { Scheduled, Completed };
+enum class BatchStatus { Scheduled, InProgress, AwaitingConfirmation, Completed };
 enum class EmployeeRole { Receptionist, Operator, Administrator };
 enum class Permission {
     ManageClients,

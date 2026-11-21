@@ -35,6 +35,7 @@ constexpr double kTimelineHeight = 42.0;
 constexpr double kMinimumBatchWidth = 1.0;
 constexpr auto kFreeTimeColor = "#86cfa5";
 constexpr auto kCompletedBatchColor = "#5d9bd3";
+constexpr auto kRunningBatchColor = "#ab8be3";
 constexpr auto kScheduledBatchColor = "#efad55";
 
 enum HistoryColumn { HistoryBatch, HistoryStart, HistoryReady, HistoryStatus, HistoryCompleted, HistoryColumnCount };
@@ -44,29 +45,36 @@ enum MachineColumn { MachineId, MachineName, MachineType, MachineCapacity, Machi
 constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Название", "Тип", "Объём, кг",
                                                                       "Доступность", "До ТО, ч"};
 constexpr std::array<const char*, HistoryColumnCount> kHistoryHeaders{
-    "Партия", "Начало", "Конец обработки", "Статус", "Подтверждение завершения"};
+    "Партия", "Начало", "Конец цикла", "Статус", "Подтверждение завершения"};
 
 void draw_timeline(QGraphicsScene& scene, const std::vector<const Batch*>& history, TimePoint center) {
     scene.clear();
     const TimePoint start = add_hours(center, -kHoursPerDay);
     const TimePoint end = add_hours(center, kHoursPerDay);
+    const TimePoint now = qt_convert::now();
     const double span = hours_between(end, start);
     scene.addRect(0.0, kTimelineTop, kTimelineWidth, kTimelineHeight,
                   QPen(Qt::NoPen), QBrush(QColor(kFreeTimeColor)));
     for (const Batch* batch : history) {
-        const TimePoint visible_start = std::max(start, batch->planned_start_at());
-        const TimePoint visible_end = std::min(end, batch->planned_ready_at());
+        const bool started = batch->started_at().has_value();
+        const bool completed = batch->completed_at().has_value();
+        const TimePoint visible_start = std::max(start, batch->effective_start_at());
+        const TimePoint visible_end = std::min(end, batch->occupied_until());
         if (visible_end <= visible_start) continue;
 
         const double batch_start_offset = hours_between(visible_start, start) / span * kTimelineWidth;
         const double width = hours_between(visible_end, visible_start) / span * kTimelineWidth;
         const double block_width = std::min(std::max(width, kMinimumBatchWidth), kTimelineWidth - batch_start_offset);
-        const QColor color(batch->status() == BatchStatus::Completed ? kCompletedBatchColor : kScheduledBatchColor);
+        const QColor color(completed ? kCompletedBatchColor : started ? kRunningBatchColor : kScheduledBatchColor);
         auto* block = scene.addRect(batch_start_offset, kTimelineTop, block_width, kTimelineHeight,
                                     QPen(Qt::NoPen), QBrush(color));
-        block->setToolTip(QStringLiteral("Партия №%1\n%2 — %3")
-                             .arg(batch->id()).arg(qt_convert::format_time(batch->planned_start_at()),
-                                                  qt_convert::format_time(batch->planned_ready_at())));
+        block->setToolTip(QStringLiteral("Партия №%1 · %2\n%3: %4\n%5: %6")
+            .arg(batch->id())
+            .arg(qt_convert::text(display_name(batch->status_at(now))),
+                 started ? QStringLiteral("Фактический запуск") : QStringLiteral("Плановое начало"),
+                 qt_convert::format_time(batch->effective_start_at()),
+                 completed ? QStringLiteral("Подтверждение завершения") : QStringLiteral("Расчётный конец цикла"),
+                 qt_convert::format_time(batch->occupied_until())));
     }
     auto* start_label = scene.addText(qt_convert::format_time(start));
     start_label->document()->setDocumentMargin(0.0);
@@ -115,7 +123,7 @@ void MachinesTab::show_history(Id id) {
         if (batch.machine_id() == id) history.push_back(&batch);
     }
     std::sort(history.begin(), history.end(), [](const Batch* left, const Batch* right) {
-        return left->planned_start_at() < right->planned_start_at();
+        return left->effective_start_at() < right->effective_start_at();
     });
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Занятость — ") + qt_convert::text(machine.name()));
@@ -132,7 +140,7 @@ void MachinesTab::show_history(Id id) {
     date_controls->addStretch();
     layout->addLayout(date_controls);
     layout->addWidget(new QLabel(QStringLiteral(
-        "Зелёный — свободна · синий — завершённая обработка · оранжевый — запланированная обработка"), &dialog));
+        "Зелёный — без партий · синий — завершена · фиолетовый — запущена · оранжевый — ожидает запуска"), &dialog));
     auto* scene = new QGraphicsScene(&dialog);
     auto* view = new QGraphicsView(scene, &dialog);
     layout->addWidget(view);
@@ -150,9 +158,9 @@ void MachinesTab::show_history(Id id) {
     for (int row = 0; row < static_cast<int>(history.size()); ++row) {
         const Batch& batch = *history[row];
         set_cell(table, row, HistoryBatch, batch.id());
-        set_time_cell(table, row, HistoryStart, batch.planned_start_at());
-        set_time_cell(table, row, HistoryReady, batch.planned_ready_at());
-        set_cell(table, row, HistoryStatus, qt_convert::text(display_name(batch.status())));
+        set_time_cell(table, row, HistoryStart, batch.effective_start_at());
+        set_time_cell(table, row, HistoryReady, batch.expected_ready_at());
+        set_cell(table, row, HistoryStatus, qt_convert::text(display_name(batch.status_at(qt_convert::now()))));
         set_time_cell(table, row, HistoryCompleted, batch.completed_at());
     }
     layout->addWidget(table);
@@ -178,9 +186,10 @@ void MachinesTab::fill(TableWidget* table) {
         set_cell(table, row, MachineType, qt_convert::text(display_name(machine.type())));
         set_sortable_cell(table, row, MachineCapacity, QString::number(machine.capacity_kg(), 'f', kCapacityDecimals),
                           machine.capacity_kg(), true);
-        const bool is_free = machine.is_free_at(now);
-        set_sortable_cell(table, row, MachineFreeAt,
-                          is_free ? QStringLiteral("свободна") : qt_convert::format_time(machine.free_at()),
+        const bool is_free = shop_.can_service_machine(machine.id(), now);
+        const QString availability = is_free ? QStringLiteral("Свободна") : machine.is_free_at(now)
+            ? QStringLiteral("Ожидает запуска или подтверждения") : qt_convert::format_time(machine.free_at());
+        set_sortable_cell(table, row, MachineFreeAt, availability,
                           time_sort_value(is_free ? std::nullopt : std::optional(machine.free_at())));
         set_sortable_cell(table, row, MachineMaintenance,
                           QString::number(machine.maintenance_remaining(), 'f', kMaintenanceDecimals),
