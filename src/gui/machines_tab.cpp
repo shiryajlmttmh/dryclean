@@ -1,20 +1,27 @@
 #include "gui/machines_tab.h"
 
-#include <QDateTimeEdit>
+#include <QButtonGroup>
+#include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QTextDocument>
-#include <QGraphicsScene>
 #include <QGraphicsRectItem>
-#include <QGraphicsTextItem>
+#include <QGraphicsScene>
 #include <QGraphicsView>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <cmath>
+#include <functional>
+#include <utility>
 
 #include "display.h"
 #include "gui/machine_dialog.h"
@@ -28,11 +35,11 @@ constexpr int kCapacityDecimals = 1;
 constexpr int kMaintenanceDecimals = 1;
 constexpr int kHistoryWindowWidth = 1000;
 constexpr int kHistoryWindowHeight = 560;
-constexpr int kHoursPerDay = 24;
-constexpr double kTimelineWidth = 900.0;
-constexpr double kTimelineTop = 30.0;
-constexpr double kTimelineHeight = 42.0;
-constexpr double kMinimumBatchWidth = 1.0;
+constexpr int kDaysPerWeek = 7;
+constexpr int kScaleHeight = 104;
+constexpr qreal kSidePadding = 30;
+constexpr qreal kTrackTop = 35;
+constexpr qreal kTrackHeight = 46;
 constexpr auto kFreeTimeColor = "#86cfa5";
 constexpr auto kCompletedBatchColor = "#5d9bd3";
 constexpr auto kRunningBatchColor = "#ab8be3";
@@ -47,42 +54,174 @@ constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Н
 constexpr std::array<const char*, HistoryColumnCount> kHistoryHeaders{
     "Партия", "Начало", "Конец цикла", "Статус", "Подтверждение завершения"};
 
-void draw_timeline(QGraphicsScene& scene, const std::vector<const Batch*>& history, TimePoint center) {
-    scene.clear();
-    const TimePoint start = add_hours(center, -kHoursPerDay);
-    const TimePoint end = add_hours(center, kHoursPerDay);
-    const TimePoint now = qt_convert::now();
-    const double span = hours_between(end, start);
-    scene.addRect(0.0, kTimelineTop, kTimelineWidth, kTimelineHeight,
-                  QPen(Qt::NoPen), QBrush(QColor(kFreeTimeColor)));
-    for (const Batch* batch : history) {
-        const bool started = batch->started_at().has_value();
-        const bool completed = batch->completed_at().has_value();
-        const TimePoint visible_start = std::max(start, batch->effective_start_at());
-        const TimePoint visible_end = std::min(end, batch->occupied_until());
-        if (visible_end <= visible_start) continue;
-
-        const double batch_start_offset = hours_between(visible_start, start) / span * kTimelineWidth;
-        const double width = hours_between(visible_end, visible_start) / span * kTimelineWidth;
-        const double block_width = std::min(std::max(width, kMinimumBatchWidth), kTimelineWidth - batch_start_offset);
-        const QColor color(completed ? kCompletedBatchColor : started ? kRunningBatchColor : kScheduledBatchColor);
-        auto* block = scene.addRect(batch_start_offset, kTimelineTop, block_width, kTimelineHeight,
-                                    QPen(Qt::NoPen), QBrush(color));
-        block->setToolTip(QStringLiteral("Партия №%1 · %2\n%3: %4\n%5: %6")
-            .arg(batch->id())
-            .arg(qt_convert::text(display_name(batch->status_at(now))),
-                 started ? QStringLiteral("Фактический запуск") : QStringLiteral("Плановое начало"),
-                 qt_convert::format_time(batch->effective_start_at()),
-                 completed ? QStringLiteral("Подтверждение завершения") : QStringLiteral("Расчётный конец цикла"),
-                 qt_convert::format_time(batch->occupied_until())));
-    }
-    auto* start_label = scene.addText(qt_convert::format_time(start));
-    start_label->document()->setDocumentMargin(0.0);
-    start_label->setPos(0.0, 0.0);
-    auto* end_label = scene.addText(qt_convert::format_time(end));
-    end_label->document()->setDocumentMargin(0.0);
-    end_label->setPos(kTimelineWidth - end_label->boundingRect().width(), 0.0);
+QDate first_day(QDate date, bool weekly) {
+    return weekly ? date.addDays(1 - date.dayOfWeek()) : date;
 }
+
+TimePoint midnight(QDate date) {
+    return from_epoch_ms(date.startOfDay().toMSecsSinceEpoch());
+}
+
+QString exact_time(TimePoint time) {
+    return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("dd.MM.yyyy HH:mm:ss"));
+}
+
+QString batch_tooltip(const Batch& batch, TimePoint now) {
+    const auto start_label = batch.started_at() ? QStringLiteral("Фактический запуск") : QStringLiteral("Плановое начало");
+    const auto end_label = batch.completed_at() ? QStringLiteral("Фактическое подтверждение завершения")
+        : batch.started_at() ? QStringLiteral("Прогноз окончания цикла") : QStringLiteral("Плановое окончание");
+    return QStringLiteral("Партия №%1 · %2\n%3: %4\n%5: %6")
+        .arg(batch.id())
+        .arg(qt_convert::text(display_name(batch.status_at(now))), start_label, exact_time(batch.effective_start_at()),
+             end_label, exact_time(batch.occupied_until()));
+}
+
+class MachineTimeline final : public QGraphicsView {
+public:
+    MachineTimeline(const DryCleaningShop& shop, Id machine, QWidget* parent)
+        : QGraphicsView(parent), shop_(shop), machine_(machine) {
+        setScene(new QGraphicsScene(this));
+        setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setFixedHeight(kScaleHeight);
+        setFocusPolicy(Qt::StrongFocus);
+        setAccessibleName(QStringLiteral("Календарная шкала занятости машины"));
+    }
+
+    void set_period(QDate date, bool weekly) {
+        date_ = date;
+        weekly_ = weekly;
+        setAccessibleDescription(weekly_ ? QStringLiteral("Стрелки выбирают день, Enter открывает его.") : QString());
+        redraw();
+    }
+
+    void on_day_selected(std::function<void(QDate)> action) { select_day_ = std::move(action); }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override {
+        QGraphicsView::resizeEvent(event);
+        if (date_.isValid()) redraw();
+    }
+
+    void mousePressEvent(QMouseEvent* event) override {
+        const QPointF point = mapToScene(event->position().toPoint());
+        if (weekly_ && event->button() == Qt::LeftButton && point.y() >= 0 && point.y() <= kTrackTop + kTrackHeight &&
+            point.x() >= track().left() && point.x() < track().right()) {
+            const QDate week = first_day(date_, true);
+            for (int day = 0; day < kDaysPerWeek; ++day) {
+                if (point.x() < x_at(midnight(week.addDays(day + 1)))) {
+                    select_day_(week.addDays(day));
+                    event->accept();
+                    return;
+                }
+            }
+        }
+        QGraphicsView::mousePressEvent(event);
+    }
+
+    void keyPressEvent(QKeyEvent* event) override {
+        if (weekly_ && (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
+            select_day_(date_);
+            event->accept();
+            return;
+        }
+        if (weekly_ && (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right)) {
+            const auto day = date_.addDays(event->key() == Qt::Key_Left ? -1 : 1);
+            if (first_day(day, true) == first_day(date_, true)) date_ = day;
+            redraw();
+            event->accept();
+            return;
+        }
+        QGraphicsView::keyPressEvent(event);
+    }
+
+private:
+    QRectF track() const {
+        return {kSidePadding, kTrackTop, std::max(qreal(1), viewport()->width() - 2 * kSidePadding), kTrackHeight};
+    }
+
+    qreal x_at(TimePoint time) const {
+        const QRectF area = track();
+        return area.left() + area.width() * hours_between(time, start_) / hours_between(end_, start_);
+    }
+
+    void add_label(const QString& text, qreal center, bool selected = false) {
+        auto label_font = font();
+        label_font.setBold(selected);
+        auto* label = scene()->addSimpleText(text, label_font);
+        label->setBrush(palette().text());
+        const qreal width = label->boundingRect().width();
+        label->setPos(std::max(qreal(0), std::min(center - width / 2, viewport()->width() - width)), 5);
+    }
+
+    void add_tick(qreal x, bool major) {
+        scene()->addLine(x, kTrackTop - (major ? 7 : 3), x, track().bottom() + 3, QPen(palette().mid(), 1));
+    }
+
+    void draw_week(QDate monday) {
+        constexpr std::array weekdays{"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"};
+        for (int i = 0; i < kDaysPerWeek; ++i) {
+            const auto date = monday.addDays(i);
+            const qreal left = x_at(midnight(date));
+            const qreal right = x_at(midnight(date.addDays(1)));
+            add_tick(left, true);
+            add_label(QStringLiteral("%1 %2").arg(QString::fromUtf8(weekdays[i]), date.toString(QStringLiteral("dd.MM"))),
+                      (left + right) / 2, date == date_);
+        }
+        add_tick(track().right(), true);
+    }
+
+    void draw_day() {
+        const auto tick_label = [](TimePoint time) {
+            return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("HH:mm"));
+        };
+        const qreal spacing = track().width() / hours_between(end_, start_);
+        const qreal label_width = fontMetrics().horizontalAdvance(QStringLiteral("00:00")) + 6;
+        const int label_every = std::max(1, static_cast<int>(std::ceil(label_width / spacing)));
+        int index = 0;
+        for (auto tick = start_; tick < end_; tick += std::chrono::hours(1), ++index) {
+            const bool label = index % label_every == 0 && (tick == start_ || x_at(end_) - x_at(tick) >= label_width);
+            add_tick(x_at(tick), label);
+            if (label) add_label(tick_label(tick), x_at(tick));
+        }
+        add_tick(x_at(end_), true);
+        add_label(tick_label(end_), x_at(end_));
+    }
+
+    void redraw() {
+        scene()->clear();
+        scene()->setSceneRect(0, 0, viewport()->width(), viewport()->height());
+        const QDate first = first_day(date_, weekly_);
+        start_ = midnight(first);
+        end_ = midnight(first.addDays(weekly_ ? kDaysPerWeek : 1));
+        if (end_ <= start_) return;
+
+        scene()->addRect(track(), QPen(Qt::NoPen), QBrush(QColor(kFreeTimeColor)));
+        const TimePoint now = qt_convert::now();
+        for (const Batch& batch : shop_.batches()) {
+            if (batch.machine_id() != machine_) continue;
+            const TimePoint start = std::max(start_, batch.effective_start_at());
+            const TimePoint end = std::min(end_, batch.occupied_until());
+            if (end <= start) continue;
+            const auto color = batch.completed_at() ? kCompletedBatchColor
+                : batch.started_at() ? kRunningBatchColor : kScheduledBatchColor;
+            auto* block = scene()->addRect(x_at(start), kTrackTop, x_at(end) - x_at(start), kTrackHeight,
+                                          QPen(Qt::NoPen), QBrush(QColor(color)));
+            block->setToolTip(batch_tooltip(batch, now));
+        }
+        if (weekly_) draw_week(first);
+        else draw_day();
+    }
+
+    const DryCleaningShop& shop_;
+    Id machine_;
+    QDate date_;
+    bool weekly_ = true;
+    TimePoint start_{};
+    TimePoint end_{};
+    std::function<void(QDate)> select_day_;
+};
 
 }
 
@@ -129,29 +268,78 @@ void MachinesTab::show_history(Id id) {
     dialog.setWindowTitle(QStringLiteral("Занятость — ") + qt_convert::text(machine.name()));
     dialog.resize(kHistoryWindowWidth, kHistoryWindowHeight);
     auto* layout = new QVBoxLayout(&dialog);
-    auto* date_edit = new QDateTimeEdit(QDateTime::currentDateTime(), &dialog);
-    date_edit->setDisplayFormat(QStringLiteral("dd.MM.yyyy HH:mm"));
-    date_edit->setCalendarPopup(true);
-    auto* now_button = new QPushButton(QStringLiteral("Сейчас"), &dialog);
+    auto* modes = new QButtonGroup(&dialog);
+    auto* day_button = new QToolButton(&dialog);
+    day_button->setText(QStringLiteral("День"));
+    day_button->setCheckable(true);
+    modes->addButton(day_button);
+    auto* week_button = new QToolButton(&dialog);
+    week_button->setText(QStringLiteral("Неделя"));
+    week_button->setCheckable(true);
+    modes->addButton(week_button);
+    week_button->setChecked(true);
+
+    auto* previous = new QToolButton(&dialog);
+    previous->setArrowType(Qt::LeftArrow);
+    auto* next = new QToolButton(&dialog);
+    next->setArrowType(Qt::RightArrow);
+    auto* today = new QToolButton(&dialog);
+    today->setText(QStringLiteral("Сегодня"));
+    auto* period = new QLabel(&dialog);
+    auto* day_hint = new QLabel(QStringLiteral("Нажмите на день, чтобы открыть его шкалу."), &dialog);
+    day_hint->setWordWrap(true);
     auto* date_controls = new QHBoxLayout;
-    date_controls->addWidget(new QLabel(QStringLiteral("Центр шкалы:"), &dialog));
-    date_controls->addWidget(date_edit);
-    date_controls->addWidget(now_button);
+    date_controls->addWidget(day_button);
+    date_controls->addWidget(week_button);
+    date_controls->addSpacing(8);
+    date_controls->addWidget(previous);
+    date_controls->addWidget(next);
+    date_controls->addWidget(today);
+    date_controls->addWidget(period);
     date_controls->addStretch();
     layout->addLayout(date_controls);
-    layout->addWidget(new QLabel(QStringLiteral(
-        "Зелёный — без партий · синий — завершена · фиолетовый — запущена · оранжевый — ожидает запуска"), &dialog));
-    auto* scene = new QGraphicsScene(&dialog);
-    auto* view = new QGraphicsView(scene, &dialog);
+    layout->addWidget(day_hint);
+    auto* view = new MachineTimeline(shop_, id, &dialog);
     layout->addWidget(view);
-    const auto update_timeline = [scene, &history](const QDateTime& date_time) {
-        draw_timeline(*scene, history, from_epoch_ms(date_time.toMSecsSinceEpoch()));
+    auto* legend = new QLabel(QStringLiteral(
+        "Зелёный — без партий · синий — завершена · фиолетовый — запущена · оранжевый — ожидает запуска"), &dialog);
+    legend->setWordWrap(true);
+    layout->addWidget(legend);
+
+    QDate date = QDate::currentDate();
+    const auto update_period = [=, &date] {
+        const bool weekly = week_button->isChecked();
+        const auto label = QStringLiteral("dd.MM.yyyy");
+        const QDate first = first_day(date, weekly);
+        period->setText(weekly
+            ? QStringLiteral("%1 – %2").arg(first.toString(label), first.addDays(kDaysPerWeek - 1).toString(label))
+            : date.toString(label));
+        const auto previous_name = weekly ? QStringLiteral("Предыдущая неделя") : QStringLiteral("Предыдущий день");
+        const auto next_name = weekly ? QStringLiteral("Следующая неделя") : QStringLiteral("Следующий день");
+        previous->setAccessibleName(previous_name);
+        previous->setToolTip(previous_name);
+        next->setAccessibleName(next_name);
+        next->setToolTip(next_name);
+        day_hint->setVisible(weekly);
+        view->set_period(date, weekly);
     };
-    connect(date_edit, &QDateTimeEdit::dateTimeChanged, &dialog, update_timeline);
-    connect(now_button, &QPushButton::clicked, &dialog, [date_edit] {
-        date_edit->setDateTime(QDateTime::currentDateTime());
+    const auto navigate = [week_button, &date, update_period](int direction) {
+        date = date.addDays(direction * (week_button->isChecked() ? kDaysPerWeek : 1));
+        update_period();
+    };
+    connect(modes, &QButtonGroup::buttonClicked, &dialog, update_period);
+    connect(previous, &QToolButton::clicked, &dialog, [navigate] { navigate(-1); });
+    connect(next, &QToolButton::clicked, &dialog, [navigate] { navigate(1); });
+    connect(today, &QToolButton::clicked, &dialog, [&date, update_period] {
+        date = QDate::currentDate();
+        update_period();
     });
-    update_timeline(date_edit->dateTime());
+    view->on_day_selected([day_button, &date, update_period](QDate selected) {
+        date = selected;
+        day_button->setChecked(true);
+        update_period();
+    });
+    update_period();
     auto* table = new TableWidget(make_headers(kHistoryHeaders), &dialog, HistoryStatus);
     table->set_empty_text(QStringLiteral("У этой машины пока нет партий."));
     table->reset_rows(static_cast<int>(history.size()));
@@ -162,6 +350,7 @@ void MachinesTab::show_history(Id id) {
         set_time_cell(table, row, HistoryReady, batch.expected_ready_at());
         set_cell(table, row, HistoryStatus, qt_convert::text(display_name(batch.status_at(qt_convert::now()))));
         set_time_cell(table, row, HistoryCompleted, batch.completed_at());
+        table->item(row, HistoryStart)->setToolTip(batch_tooltip(batch, qt_convert::now()));
     }
     layout->addWidget(table);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
