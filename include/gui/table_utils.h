@@ -29,6 +29,7 @@ public:
 
     void reset_rows(int count);
     void finish_rows();
+    void reset_sort();
     void set_empty_text(const QString& text);
     void add_stretch_column(int column);
     int actions_column() const noexcept;

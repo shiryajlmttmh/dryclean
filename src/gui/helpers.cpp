@@ -3,11 +3,9 @@
 #include <QAbstractButton>
 #include <QDoubleSpinBox>
 #include <QGroupBox>
-#include <QListWidget>
 #include <QMessageBox>
 #include <QStringList>
 #include <QTableWidget>
-#include <QVariant>
 #include <QVBoxLayout>
 
 #include "exceptions.h"
@@ -19,15 +17,6 @@ namespace {
 constexpr int kNoRow = -1;
 constexpr const char* kUnknown = "?";
 constexpr const char* kTagSeparator = ", ";
-constexpr int kPositionRole = Qt::UserRole;
-
-std::optional<std::size_t> stored_position(const QVariant& value, std::size_t count) {
-    if (!value.isValid()) {
-        return std::nullopt;
-    }
-    const std::size_t position = static_cast<std::size_t>(value.toULongLong());
-    return position < count ? std::optional<std::size_t>(position) : std::nullopt;
-}
 
 }
 
@@ -74,16 +63,6 @@ void restore_selected_id(QTableWidget* table, int id_column, std::optional<Id> i
             return;
         }
     }
-}
-
-void add_positioned_item(QListWidget* list, const QString& text, std::size_t position) {
-    auto* item = new QListWidgetItem(text, list);
-    item->setData(kPositionRole, static_cast<qulonglong>(position));
-}
-
-std::optional<std::size_t> selected_position(const QListWidget* list, std::size_t count) {
-    const QListWidgetItem* item = list->currentItem();
-    return item == nullptr ? std::nullopt : stored_position(item->data(kPositionRole), count);
 }
 
 QString item_services_text(const Item& item) {

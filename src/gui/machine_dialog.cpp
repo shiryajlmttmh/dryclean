@@ -1,5 +1,7 @@
 #include "gui/machine_dialog.h"
 
+#include "gui/suggestions.h"
+
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -23,9 +25,10 @@ constexpr double kMaintenanceStepHours = 10.0;
 
 }
 
-MachineDialog::MachineDialog(const QString& title, const Machine& initial, Apply apply, QWidget* parent)
+MachineDialog::MachineDialog(const DryCleaningShop& shop, const QString& title, const Machine& initial, Apply apply, QWidget* parent)
     : ApplyDialog(title, parent), apply_(std::move(apply)) {
     name_edit_ = new QLineEdit(qt_convert::text(initial.name()), this);
+    set_suggestions(name_edit_, input_suggestions(shop, SuggestionKind::MachineName));
 
     type_box_ = new QComboBox(this);
     fill_enum_combo<ServiceType>(type_box_, {ServiceType::DryCleaning, ServiceType::WetCleaning,

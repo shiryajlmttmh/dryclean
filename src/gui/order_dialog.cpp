@@ -2,6 +2,8 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCompleter>
+#include <QLineEdit>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -62,6 +64,7 @@ OrderDialog::OrderDialog(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     connect(buttons, &QDialogButtonBox::accepted, this, &OrderDialog::try_accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(client_box_, &QComboBox::currentIndexChanged, this, &OrderDialog::refresh);
+    connect(client_box_, &QComboBox::editTextChanged, this, &OrderDialog::refresh);
     connect(urgent_box_, &QCheckBox::toggled, this, &OrderDialog::refresh);
     refresh();
 }
@@ -73,6 +76,13 @@ void OrderDialog::build_header(QFormLayout* form) {
                               qt_convert::text(format_phone(client.phone()));
         client_box_->addItem(label, static_cast<unsigned int>(client.id()));
     }
+
+    client_box_->setEditable(true);
+    client_box_->setInsertPolicy(QComboBox::NoInsert);
+    client_box_->lineEdit()->setPlaceholderText(QStringLiteral("Начните вводить имя клиента"));
+    client_box_->completer()->setCaseSensitivity(Qt::CaseInsensitive);
+    client_box_->completer()->setFilterMode(Qt::MatchStartsWith);
+    client_box_->completer()->setCompletionMode(QCompleter::PopupCompletion);
 
     urgent_box_ = new QCheckBox(QStringLiteral("Срочный заказ"), this);
 
@@ -97,9 +107,15 @@ QWidget* OrderDialog::build_items_box() {
 
 Id OrderDialog::accepted_order_id() const noexcept { return accepted_id_; }
 
+Id OrderDialog::selected_client() const {
+    const int index = client_box_->currentIndex();
+    if (index < 0 || client_box_->currentText() != client_box_->itemText(index)) return 0;
+    return client_box_->itemData(index).toUInt();
+}
+
 OrderDraft OrderDialog::make_draft() const {
     OrderDraft draft;
-    draft.client_id = static_cast<Id>(client_box_->currentData().toUInt());
+    draft.client_id = selected_client();
     draft.items.reserve(items_.size());
     for (const DraftItem& entry : items_) {
         draft.items.push_back(entry.item);
@@ -110,7 +126,7 @@ OrderDraft OrderDialog::make_draft() const {
 
 std::optional<OrderQuote> OrderDialog::make_quote() {
     error_label_->clear();
-    if (items_.empty() || client_box_->count() == 0) {
+    if (items_.empty() || selected_client() == 0) {
         return std::nullopt;
     }
     try {
@@ -157,6 +173,8 @@ void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
     if (!quote) {
         if (client_box_->count() == 0) {
             summary_label_->setText(QStringLiteral("Добавьте клиента на вкладке «Клиенты», затем откройте приём заказа снова."));
+        } else if (selected_client() == 0) {
+            summary_label_->setText(QStringLiteral("Выберите клиента из списка по имени."));
         } else if (items_.empty()) {
             summary_label_->setText(QStringLiteral("После добавления изделия здесь появятся цена и срок."));
         } else {
@@ -172,7 +190,7 @@ void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
 }
 
 void OrderDialog::add_item() {
-    ItemDialog dialog(Item(), QStringLiteral("Новое изделие"), this);
+    ItemDialog dialog(shop_, Item(), QStringLiteral("Новое изделие"), this);
     if (dialog.exec() == QDialog::Accepted) {
         items_.push_back({next_item_id_++, dialog.item()});
         refresh();
@@ -182,7 +200,7 @@ void OrderDialog::add_item() {
 void OrderDialog::edit_item(Id id) {
     const auto entry = std::ranges::find(items_, id, &DraftItem::id);
     if (entry == items_.end()) return;
-    ItemDialog dialog(entry->item, QStringLiteral("Изменение изделия"), this);
+    ItemDialog dialog(shop_, entry->item, QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() == QDialog::Accepted) {
         entry->item = dialog.item();
         refresh();

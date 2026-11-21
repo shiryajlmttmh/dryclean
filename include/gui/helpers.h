@@ -2,7 +2,6 @@
 
 #include <QString>
 #include <functional>
-#include <cstddef>
 #include <optional>
 #include <vector>
 
@@ -12,7 +11,6 @@ inline constexpr int kStretch = 1;
 inline constexpr const char* kErrorStyle = "color: #b00020;";
 
 class QDoubleSpinBox;
-class QListWidget;
 class QTableWidget;
 class QWidget;
 
@@ -21,8 +19,6 @@ bool confirm(QWidget* parent, const QString& title, const QString& text);
 bool has_permission(const DryCleaningShop& shop, Id employee_id, Permission permission);
 std::optional<Id> selected_id(const QTableWidget* table, int id_column);
 void restore_selected_id(QTableWidget* table, int id_column, std::optional<Id> id);
-void add_positioned_item(QListWidget* list, const QString& text, std::size_t position);
-std::optional<std::size_t> selected_position(const QListWidget* list, std::size_t count);
 QString item_tag(const DryCleaningShop& shop, Id item_id);
 QString item_services_text(const Item& item);
 QString item_tags(const DryCleaningShop& shop, const std::vector<Id>& item_ids);

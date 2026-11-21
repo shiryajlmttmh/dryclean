@@ -119,7 +119,7 @@ void OrderItemsDialog::refresh() {
 
 void OrderItemsDialog::edit_item(Id id) {
     if (!can_edit()) return;
-    ItemDialog dialog(shop_.items().get(id), QStringLiteral("Изменение изделия"), this);
+    ItemDialog dialog(shop_, shop_.items().get(id), QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }

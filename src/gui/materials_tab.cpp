@@ -14,6 +14,7 @@
 #include "gui/material_dialog.h"
 #include "gui/qt_convert.h"
 #include "gui/table_utils.h"
+#include "gui/suggestions.h"
 
 namespace {
 
@@ -69,6 +70,7 @@ MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
 }
 
 void MaterialsTab::fill(TableWidget* table) {
+    set_suggestions(search_edit_, record_suggestions(shop_, SuggestionKind::MaterialName));
     const QString query = search_edit_->text().trimmed();
     if (!query.isEmpty()) {
         table->set_empty_text(QStringLiteral("Материалы не найдены. Измените поисковый запрос."));
@@ -106,14 +108,14 @@ void MaterialsTab::add_extra_actions(QHBoxLayout* actions, Id id) {
 
 void MaterialsTab::add_record() {
     MaterialDialog dialog(
-        QStringLiteral("Новый материал"), Material(), true,
+        shop_,         QStringLiteral("Новый материал"), Material(), true,
         [this](const Material& material) { shop_.add_material(material, employee_id_); }, this);
     show_dialog(dialog);
 }
 
 void MaterialsTab::edit_record(Id id) {
     MaterialDialog dialog(
-        QStringLiteral("Изменение материала"), shop_.materials().get(id), false,
+        shop_,         QStringLiteral("Изменение материала"), shop_.materials().get(id), false,
         [this, id](const Material& material) {
             Material updated = material;
             updated.set_id(id);

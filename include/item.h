@@ -12,6 +12,7 @@ class Item {
 public:
     struct Defect {
         StainClass type = StainClass::Light;
+        std::string name;
         std::string description;
         double area_cm2 = 0.0;
 
@@ -21,8 +22,7 @@ public:
     };
 
     Item() = default;
-    Item(std::string kind, std::string material_name, MaterialGroup material_group,
-         std::string color_name, ColorGroup color_group, double weight_kg, SoilLevel soil_level);
+    Item(std::string kind, std::string material_name, std::string color_name, double weight_kg, SoilLevel soil_level);
 
     Id id() const noexcept;
     Id order_id() const noexcept;
@@ -50,8 +50,8 @@ public:
     void set_order_id(Id order_id) noexcept;
     void set_tag(std::string tag);
     void set_kind(std::string kind);
-    void set_material(std::string material_name, MaterialGroup material_group);
-    void set_color(std::string color_name, ColorGroup color_group);
+    void set_material(std::string material_name);
+    void set_color(std::string color_name);
     void set_weight_kg(double weight_kg);
     void set_soil_level(SoilLevel soil_level);
     void set_condition_notes(std::string condition_notes);

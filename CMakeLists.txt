@@ -24,6 +24,7 @@ add_library(core STATIC
     src/material.cpp
     src/machine.cpp
     src/item.cpp
+    src/suggestion.cpp
     src/validation.cpp
     src/status_record.cpp
     src/order.cpp
@@ -52,6 +53,7 @@ add_executable(dryclean
     src/gui/order_items_dialog.cpp
     src/gui/table_utils.cpp
     src/gui/helpers.cpp
+    src/gui/suggestions.cpp
     src/gui/planning_tab.cpp
     src/gui/batches_tab.cpp
     src/gui/apply_dialog.cpp

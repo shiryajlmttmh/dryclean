@@ -8,12 +8,13 @@
 class QComboBox;
 class QDoubleSpinBox;
 class QLineEdit;
+class DryCleaningShop;
 
 class MachineDialog : public ApplyDialog {
 public:
     using Apply = std::function<void(const Machine&)>;
 
-    MachineDialog(const QString& title, const Machine& initial, Apply apply, QWidget* parent = nullptr);
+    MachineDialog(const DryCleaningShop& shop, const QString& title, const Machine& initial, Apply apply, QWidget* parent = nullptr);
 
 protected:
     void apply() override;

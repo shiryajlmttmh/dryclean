@@ -1,5 +1,7 @@
 #include "gui/material_dialog.h"
 
+#include "gui/suggestions.h"
+
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -26,10 +28,11 @@ constexpr ServiceType kServices[] = {ServiceType::DryCleaning, ServiceType::WetC
 
 }
 
-MaterialDialog::MaterialDialog(const QString& title, const Material& initial, bool is_new, Apply apply,
+MaterialDialog::MaterialDialog(const DryCleaningShop& shop, const QString& title, const Material& initial, bool is_new, Apply apply,
                                QWidget* parent)
     : ApplyDialog(title, parent), apply_(std::move(apply)) {
     name_edit_ = new QLineEdit(qt_convert::text(initial.name()), this);
+    set_suggestions(name_edit_, input_suggestions(shop, SuggestionKind::MaterialName));
     unit_edit_ = new QLineEdit(qt_convert::text(initial.unit()), this);
     unit_edit_->setPlaceholderText(QStringLiteral("например, л или кг"));
 
@@ -39,6 +42,7 @@ MaterialDialog::MaterialDialog(const QString& title, const Material& initial, bo
                       initial.consumption_per_kg() > 0.0 ? initial.consumption_per_kg() : kDefaultConsumption);
 
     unit_edit_->setEnabled(is_new);
+    if (is_new) set_suggestions(unit_edit_, input_suggestions(shop, SuggestionKind::Unit));
     stock_edit_->setEnabled(is_new);
 
     form()->addRow(QStringLiteral("Название:"), name_edit_);

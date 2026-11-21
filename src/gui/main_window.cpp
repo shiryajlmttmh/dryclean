@@ -37,6 +37,7 @@
 #include "gui/qt_convert.h"
 #include "gui/table_tab.h"
 #include "gui/table_utils.h"
+#include "gui/suggestions.h"
 #include "normalize.h"
 
 namespace {
@@ -192,6 +193,7 @@ void MainWindow::save() {
 }
 
 void MainWindow::refresh() {
+    set_suggestions(client_search_, record_suggestions(shop_, SuggestionKind::ClientName));
     refresh_clients();
     refresh_orders();
     planning_tab_->refresh();
@@ -408,7 +410,7 @@ void MainWindow::accept_order() {
 
 void MainWindow::add_client() {
     ClientDialog dialog(
-        QStringLiteral("Новый клиент"), QString(), QString(), kNoDiscount,
+        shop_,         QStringLiteral("Новый клиент"), QString(), QString(), kNoDiscount,
         [this](const QString& name, const QString& phone, double discount) {
             shop_.register_client(name.toStdString(), phone.toStdString(), discount, employee_id_);
         },
@@ -424,7 +426,7 @@ void MainWindow::edit_client(Id id) {
     }
     const Client current = shop_.clients().get(id);
     ClientDialog dialog(
-        QStringLiteral("Изменение клиента"), qt_convert::text(current.name()), qt_convert::text(format_phone(current.phone())),
+        shop_,         QStringLiteral("Изменение клиента"), qt_convert::text(current.name()), qt_convert::text(format_phone(current.phone())),
         current.discount(),
         [this, id](const QString& name, const QString& phone, double discount) {
             Client updated = shop_.clients().get(id);

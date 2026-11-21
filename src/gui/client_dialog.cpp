@@ -1,5 +1,7 @@
 #include "gui/client_dialog.h"
 
+#include "gui/suggestions.h"
+
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QLabel>
@@ -16,10 +18,11 @@ constexpr int kPercentDecimals = 1;
 
 }
 
-ClientDialog::ClientDialog(const QString& title, const QString& name, const QString& phone, double discount,
+ClientDialog::ClientDialog(const DryCleaningShop& shop, const QString& title, const QString& name, const QString& phone, double discount,
                            Apply apply, QWidget* parent)
     : ApplyDialog(title, parent), apply_(std::move(apply)) {
     name_edit_ = new QLineEdit(name, this);
+    set_suggestions(name_edit_, input_suggestions(shop, SuggestionKind::ClientName));
     phone_edit_ = new QLineEdit(phone, this);
     auto* phone_hint = new QLabel(QStringLiteral("Например, +375 (29) 123-45-67"), this);
     phone_edit_->setAccessibleDescription(phone_hint->text());

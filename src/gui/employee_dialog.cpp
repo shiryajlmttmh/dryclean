@@ -1,5 +1,7 @@
 #include "gui/employee_dialog.h"
 
+#include "gui/suggestions.h"
+
 #include <QComboBox>
 #include <QFormLayout>
 #include <QLineEdit>
@@ -8,9 +10,10 @@
 #include "gui/qt_convert.h"
 #include "exceptions.h"
 
-EmployeeDialog::EmployeeDialog(const QString& title, const Employee& initial, Apply apply, QWidget* parent)
+EmployeeDialog::EmployeeDialog(const DryCleaningShop& shop, const QString& title, const Employee& initial, Apply apply, QWidget* parent)
     : ApplyDialog(title, parent), initial_(initial), apply_(std::move(apply)) {
     name_edit_ = new QLineEdit(qt_convert::text(initial.name()), this);
+    set_suggestions(name_edit_, input_suggestions(shop, SuggestionKind::EmployeeName));
     login_edit_ = new QLineEdit(qt_convert::text(initial.login()), this);
     password_edit_ = new QLineEdit(this);
     password_edit_->setEchoMode(QLineEdit::Password);

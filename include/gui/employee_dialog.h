@@ -7,12 +7,13 @@
 
 class QComboBox;
 class QLineEdit;
+class DryCleaningShop;
 
 class EmployeeDialog : public ApplyDialog {
 public:
     using Apply = std::function<void(const Employee&)>;
 
-    EmployeeDialog(const QString& title, const Employee& initial, Apply apply, QWidget* parent = nullptr);
+    EmployeeDialog(const DryCleaningShop& shop, const QString& title, const Employee& initial, Apply apply, QWidget* parent = nullptr);
 
 protected:
     void apply() override;

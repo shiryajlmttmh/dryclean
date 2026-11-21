@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "exceptions.h"
+#include "item_catalog.h"
 #include "normalize.h"
 #include "pricing.h"
 #include "record_io.h"
@@ -22,16 +23,12 @@ constexpr int kTagIndexWidth = 2;
 constexpr char kTagPrefix = 'O';
 constexpr char kTagSeparator = '-';
 
-void check_material_group(MaterialGroup material_group) {
-    if (!is_valid(material_group)) {
-        throw InvalidInputException("material_group", "неизвестная группа материала");
-    }
-}
-
-void check_color_group(ColorGroup color_group) {
-    if (!is_valid(color_group)) {
-        throw InvalidInputException("color_group", "неизвестная цветовая группа");
-    }
+template <class Group, std::size_t Count>
+Group catalog_group(const std::array<ItemCatalogEntry<Group>, Count>& catalog, std::string_view name,
+                    const char* field, const char* message) {
+    const auto entry = std::ranges::find(catalog, name, &ItemCatalogEntry<Group>::name);
+    if (entry == catalog.end()) throw InvalidInputException(field, message);
+    return entry->group;
 }
 
 void check_weight(double weight_kg) {
@@ -54,6 +51,7 @@ void check_optional_text(const char* field_name, const std::string& value) {
 
 void write_defect(RecordWriter& writer, const Item::Defect& defect) {
     writer.put_token(to_string(defect.type));
+    writer.put_string(defect.name);
     writer.put_string(defect.description);
     writer.put_double(defect.area_cm2);
 }
@@ -61,6 +59,7 @@ void write_defect(RecordWriter& writer, const Item::Defect& defect) {
 Item::Defect read_defect(RecordReader& reader) {
     Item::Defect defect;
     defect.type = parse_StainClass(reader.get_token());
+    defect.name = reader.get_string();
     defect.description = reader.get_string();
     defect.area_cm2 = reader.get_double();
     return defect;
@@ -74,7 +73,8 @@ void Item::Defect::validate() const {
     if (!is_valid(type)) {
         throw InvalidInputException("type", "неизвестный класс пятна");
     }
-    require_text("description", description);
+    require_text("defect_name", name);
+    check_optional_text("description", description);
     if (!std::isfinite(area_cm2) || area_cm2 <= 0.0) {
         throw InvalidInputException("area_cm2", "площадь пятна должна быть больше нуля");
     }
@@ -84,11 +84,10 @@ void Item::Defect::validate() const {
     }
 }
 
-Item::Item(std::string kind, std::string material_name, MaterialGroup material_group,
-           std::string color_name, ColorGroup color_group, double weight_kg, SoilLevel soil_level) {
+Item::Item(std::string kind, std::string material_name, std::string color_name, double weight_kg, SoilLevel soil_level) {
     set_kind(std::move(kind));
-    set_material(std::move(material_name), material_group);
-    set_color(std::move(color_name), color_group);
+    set_material(std::move(material_name));
+    set_color(std::move(color_name));
     set_weight_kg(weight_kg);
     set_soil_level(soil_level);
 }
@@ -137,20 +136,16 @@ void Item::set_kind(std::string kind) {
     kind_ = std::move(kind);
 }
 
-void Item::set_material(std::string material_name, MaterialGroup material_group) {
-    material_name = normalize_text(std::move(material_name));
-    require_text("material_name", material_name);
-    check_material_group(material_group);
+void Item::set_material(std::string material_name) {
+    const auto group = catalog_group(kItemMaterials, material_name, "material_name", "выберите материал из списка");
     material_name_ = std::move(material_name);
-    material_group_ = material_group;
+    material_group_ = group;
 }
 
-void Item::set_color(std::string color_name, ColorGroup color_group) {
-    color_name = normalize_text(std::move(color_name));
-    require_text("color_name", color_name);
-    check_color_group(color_group);
+void Item::set_color(std::string color_name) {
+    const auto group = catalog_group(kItemColors, color_name, "color_name", "выберите цвет из списка");
     color_name_ = std::move(color_name);
-    color_group_ = color_group;
+    color_group_ = group;
 }
 
 void Item::set_weight_kg(double weight_kg) {
@@ -203,6 +198,7 @@ void Item::complete_service() {
 }
 
 void Item::add_defect(Defect defect) {
+    defect.name = normalize_text(std::move(defect.name));
     defect.description = normalize_text(std::move(defect.description));
     defect.validate();
     defects_.push_back(std::move(defect));
@@ -253,10 +249,13 @@ void Item::validate() const {
     }
     check_optional_text("tag", tag_);
     require_text("kind", kind_);
-    require_text("material_name", material_name_);
-    check_material_group(material_group_);
-    require_text("color_name", color_name_);
-    check_color_group(color_group_);
+    if (catalog_group(kItemMaterials, material_name_, "material_name", "выберите материал из списка") !=
+        material_group_) {
+        throw InvalidInputException("material_group", "группа не соответствует материалу изделия");
+    }
+    if (catalog_group(kItemColors, color_name_, "color_name", "выберите цвет из списка") != color_group_) {
+        throw InvalidInputException("color_group", "группа не соответствует цвету изделия");
+    }
     check_weight(weight_kg_);
     check_soil_level(soil_level_);
     for (const Defect& defect : defects_) {
@@ -276,9 +275,7 @@ std::ostream& operator<<(std::ostream& os, const Item& item) {
     writer.put_string(item.tag_);
     writer.put_string(item.kind_);
     writer.put_string(item.material_name_);
-    writer.put_token(to_string(item.material_group_));
     writer.put_string(item.color_name_);
-    writer.put_token(to_string(item.color_group_));
     writer.put_double(item.weight_kg_);
     writer.put_token(to_string(item.soil_level_));
     writer.put_count(item.defects_.size());
@@ -300,10 +297,8 @@ std::istream& operator>>(std::istream& is, Item& item) {
         value.order_id_ = reader.get_id();
         value.tag_ = reader.get_string();
         value.kind_ = reader.get_string();
-        value.material_name_ = reader.get_string();
-        value.material_group_ = parse_MaterialGroup(reader.get_token());
-        value.color_name_ = reader.get_string();
-        value.color_group_ = parse_ColorGroup(reader.get_token());
+        value.set_material(reader.get_string());
+        value.set_color(reader.get_string());
         value.weight_kg_ = reader.get_double();
         value.soil_level_ = parse_SoilLevel(reader.get_token());
         const std::size_t count = reader.get_count();

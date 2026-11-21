@@ -37,14 +37,14 @@ void EmployeesTab::fill(TableWidget* table) {
 
 void EmployeesTab::add_record() {
     EmployeeDialog dialog(
-        QStringLiteral("Новый сотрудник"), Employee(),
+        shop_,         QStringLiteral("Новый сотрудник"), Employee(),
         [this](const Employee& employee) { shop_.add_employee(employee, employee_id_); }, this);
     show_dialog(dialog);
 }
 
 void EmployeesTab::edit_record(Id id) {
     EmployeeDialog dialog(
-        QStringLiteral("Изменение сотрудника"), shop_.employees().get(id),
+        shop_,         QStringLiteral("Изменение сотрудника"), shop_.employees().get(id),
         [this, id](const Employee& employee) {
             Employee updated = employee;
             updated.set_id(id);

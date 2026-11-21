@@ -193,14 +193,14 @@ void MachinesTab::fill(TableWidget* table) {
 
 void MachinesTab::add_record() {
     MachineDialog dialog(
-        QStringLiteral("Новая машина"), Machine(),
+        shop_,         QStringLiteral("Новая машина"), Machine(),
         [this](const Machine& machine) { shop_.add_machine(machine, employee_id_); }, this);
     show_dialog(dialog);
 }
 
 void MachinesTab::edit_record(Id id) {
     MachineDialog dialog(
-        QStringLiteral("Изменение машины"), shop_.machines().get(id),
+        shop_,         QStringLiteral("Изменение машины"), shop_.machines().get(id),
         [this, id](const Machine& machine) {
             Machine updated = machine;
             updated.set_id(id);

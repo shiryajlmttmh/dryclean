@@ -222,6 +222,12 @@ void TableWidget::add_stretch_column(int column) {
     static_cast<TableHeader*>(horizontalHeader())->add_stretch_column(column);
 }
 
+void TableWidget::reset_sort() {
+    sort_column_ = -1;
+    horizontalHeader()->setSortIndicatorShown(false);
+    sortItems(0, Qt::AscendingOrder);
+}
+
 void TableWidget::cycle_sort(int column) {
     auto* header = horizontalHeader();
     if (column == actions_column_) {
@@ -229,9 +235,7 @@ void TableWidget::cycle_sort(int column) {
         return;
     }
     if (column == sort_column_ && sort_order_ == Qt::AscendingOrder) {
-        sort_column_ = -1;
-        header->setSortIndicatorShown(false);
-        sortItems(0, Qt::AscendingOrder);
+        reset_sort();
         return;
     }
 

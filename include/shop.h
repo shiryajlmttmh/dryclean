@@ -46,6 +46,7 @@ public:
     const Repository<Material>& materials() const noexcept;
     const Repository<Employee>& employees() const noexcept;
     const Repository<Machine>& machines() const noexcept;
+    const Repository<Suggestion>& suggestions() const noexcept;
     const Service& service(ServiceType type) const;
     const std::filesystem::path& data_dir() const noexcept;
 
@@ -149,6 +150,7 @@ private:
     Repository<Material> materials_;
     Repository<Employee> employees_;
     Repository<Machine> machines_;
+    Repository<Suggestion> suggestions_;
     std::map<ServiceType, std::unique_ptr<Service>> services_;
     BatchPlanner planner_;
     std::filesystem::path data_dir_;

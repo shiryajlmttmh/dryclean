@@ -7,6 +7,7 @@
 #include "machine.h"
 #include "material.h"
 #include "order.h"
+#include "suggestion.h"
 
 template <class T>
 struct EntityName;
@@ -44,4 +45,9 @@ struct EntityName<Employee> {
 template <>
 struct EntityName<Machine> {
     static constexpr const char* value = "machines";
+};
+
+template <>
+struct EntityName<Suggestion> {
+    static constexpr const char* value = "suggestions";
 };

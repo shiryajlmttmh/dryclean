@@ -11,12 +11,13 @@
 class QCheckBox;
 class QDoubleSpinBox;
 class QLineEdit;
+class DryCleaningShop;
 
 class MaterialDialog : public ApplyDialog {
 public:
     using Apply = std::function<void(const Material&)>;
 
-    MaterialDialog(const QString& title, const Material& initial, bool is_new, Apply apply,
+    MaterialDialog(const DryCleaningShop& shop, const QString& title, const Material& initial, bool is_new, Apply apply,
                    QWidget* parent = nullptr);
 
 protected:

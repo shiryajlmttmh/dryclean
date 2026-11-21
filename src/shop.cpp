@@ -34,7 +34,36 @@ constexpr auto kPlanLifetime = std::chrono::minutes(30);
 constexpr const char* kManifestName = "manifest.txt";
 constexpr const char* kManifestType = "manifest";
 constexpr const char* kFileExtension = ".txt";
-constexpr std::size_t kFileCount = 7;
+constexpr std::size_t kFileCount = 8;
+
+void remember(Repository<Suggestion>& suggestions, SuggestionKind kind, const std::string& value) {
+    const auto key = to_lower_text(value);
+    const auto existing = std::ranges::find_if(suggestions, [&](const Suggestion& suggestion) {
+        return suggestion.kind() == kind && to_lower_text(suggestion.value()) == key;
+    });
+    if (existing == suggestions.end()) suggestions.add(Suggestion(kind, value));
+}
+
+void remember_material(Repository<Suggestion>& suggestions, const Material& material) {
+    remember(suggestions, SuggestionKind::MaterialName, material.name());
+    remember(suggestions, SuggestionKind::Unit, material.unit());
+}
+
+void remember_item(Repository<Suggestion>& suggestions, const Item& item) {
+    remember(suggestions, SuggestionKind::ItemName, item.kind());
+    for (const auto& defect : item.defects()) {
+        remember(suggestions, SuggestionKind::DefectName, defect.name);
+    }
+}
+
+void check_suggestions(const Repository<Suggestion>& suggestions) {
+    std::set<std::pair<SuggestionKind, std::string>> keys;
+    for (const Suggestion& suggestion : suggestions) {
+        if (!keys.emplace(suggestion.kind(), to_lower_text(suggestion.value())).second) {
+            throw IntegrityException("повторяющаяся подсказка справочника");
+        }
+    }
+}
 
 void check_employees(const Repository<Employee>& employees) {
     if (std::none_of(employees.begin(), employees.end(), [](const Employee& employee) {
@@ -357,6 +386,7 @@ const Repository<Batch>& DryCleaningShop::batches() const noexcept { return batc
 const Repository<Material>& DryCleaningShop::materials() const noexcept { return materials_; }
 const Repository<Employee>& DryCleaningShop::employees() const noexcept { return employees_; }
 const Repository<Machine>& DryCleaningShop::machines() const noexcept { return machines_; }
+const Repository<Suggestion>& DryCleaningShop::suggestions() const noexcept { return suggestions_; }
 
 const Service& DryCleaningShop::service(ServiceType type) const {
     const auto found = services_.find(type);
@@ -459,7 +489,10 @@ Id DryCleaningShop::add_employee(Employee employee, Id acting_employee) {
     }
     Repository<Employee> copy = employees_;
     const Id id = copy.add(std::move(employee));
+    auto suggestions = suggestions_;
+    remember(suggestions, SuggestionKind::EmployeeName, copy.get(id).name());
     employees_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
     return id;
 }
@@ -480,7 +513,10 @@ void DryCleaningShop::update_employee(const Employee& employee, Id acting_employ
     }
     Repository<Employee> copy = employees_;
     replace_by_id(copy, employee);
+    auto suggestions = suggestions_;
+    remember(suggestions, SuggestionKind::EmployeeName, employee.name());
     employees_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
 }
 
@@ -489,7 +525,10 @@ Id DryCleaningShop::add_machine(Machine machine, Id acting_employee) {
     machine.set_free_at(TimePoint{});
     Repository<Machine> copy = machines_;
     const Id id = copy.add(std::move(machine));
+    auto suggestions = suggestions_;
+    remember(suggestions, SuggestionKind::MachineName, copy.get(id).name());
     machines_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
     return id;
 }
@@ -509,7 +548,10 @@ void DryCleaningShop::update_machine(const Machine& machine, Id acting_employee)
     }
     Repository<Machine> copy = machines_;
     replace_by_id(copy, updated);
+    auto suggestions = suggestions_;
+    remember(suggestions, SuggestionKind::MachineName, updated.name());
     machines_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
 }
 
@@ -536,7 +578,10 @@ Id DryCleaningShop::register_client(std::string name, std::string phone, double 
     }
     Repository<Client> copy = clients_;
     const Id id = copy.add(std::move(client));
+    auto suggestions = suggestions_;
+    remember(suggestions, SuggestionKind::ClientName, copy.get(id).name());
     clients_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
     return id;
 }
@@ -556,7 +601,10 @@ void DryCleaningShop::update_client(const Client& client, Id acting_employee) {
     }
     Repository<Client> copy = clients_;
     replace_by_id(copy, updated);
+    auto suggestions = suggestions_;
+    remember(suggestions, SuggestionKind::ClientName, updated.name());
     clients_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
 }
 
@@ -701,7 +749,10 @@ Id DryCleaningShop::add_material(Material material, Id acting_employee) {
     begin_mutation(acting_employee, Permission::ManageStock);
     Repository<Material> copy = materials_;
     const Id id = copy.add(std::move(material));
+    auto suggestions = suggestions_;
+    remember_material(suggestions, copy.get(id));
     materials_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
     return id;
 }
@@ -715,7 +766,10 @@ void DryCleaningShop::update_material(const Material& material, Id acting_employ
     updated.validate();
     Repository<Material> copy = materials_;
     replace_by_id(copy, updated);
+    auto suggestions = suggestions_;
+    remember_material(suggestions, updated);
     materials_.swap(copy);
+    suggestions_.swap(suggestions);
     publish();
 }
 
@@ -810,10 +864,13 @@ Id DryCleaningShop::accept_order(const OrderDraft& draft, Id acting_employee, Ti
         throw InvalidInputException("order_id", "выданный идентификатор заказа не совпал с ожидаемым");
     }
     clients.get(draft.client_id).add_order_id(order_id);
+    auto suggestions = suggestions_;
+    for (const Item& item : draft.items) remember_item(suggestions, item);
 
     items_.swap(items);
     orders_.swap(orders);
     clients_.swap(clients);
+    suggestions_.swap(suggestions);
     publish();
     return order_id;
 }
@@ -832,8 +889,8 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     Item updated = current;
     updated.set_services(item.services());
     updated.set_kind(item.kind());
-    updated.set_material(item.material_name(), item.material_group());
-    updated.set_color(item.color_name(), item.color_group());
+    updated.set_material(item.material_name());
+    updated.set_color(item.color_name());
     updated.set_weight_kg(item.weight_kg());
     updated.set_soil_level(item.soil_level());
     updated.set_condition_notes(item.condition_notes());
@@ -863,8 +920,11 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     Repository<Order> orders = orders_;
     replace_by_id(items, updated);
     replace_by_id(orders, changed);
+    auto suggestions = suggestions_;
+    remember_item(suggestions, updated);
     items_.swap(items);
     orders_.swap(orders);
+    suggestions_.swap(suggestions);
     publish();
 }
 
@@ -1341,6 +1401,7 @@ void DryCleaningShop::save_all() {
         save_file(materials_, directory);
         save_file(employees_, directory);
         save_file(machines_, directory);
+        save_file(suggestions_, directory);
         write_manifest(directory / kManifestName, revision_,
                        {{file_name_for<Client>(), clients_.size()},
                         {file_name_for<Item>(), items_.size()},
@@ -1348,7 +1409,8 @@ void DryCleaningShop::save_all() {
                         {file_name_for<Batch>(), batches_.size()},
                         {file_name_for<Material>(), materials_.size()},
                         {file_name_for<Employee>(), employees_.size()},
-                        {file_name_for<Machine>(), machines_.size()}});
+                        {file_name_for<Machine>(), machines_.size()},
+                        {file_name_for<Suggestion>(), suggestions_.size()}});
         storage_->commit_generation(generation);
     } catch (...) {
         storage_->abort_generation(generation);
@@ -1371,6 +1433,7 @@ void DryCleaningShop::load_all() {
     Repository<Material> materials;
     Repository<Employee> employees;
     Repository<Machine> machines;
+    Repository<Suggestion> suggestions;
     Revision stored_revision = 0;
 
     if (!current) {
@@ -1387,6 +1450,8 @@ void DryCleaningShop::load_all() {
         load_file(materials, directory, counts);
         load_file(employees, directory, counts);
         load_file(machines, directory, counts);
+        load_file(suggestions, directory, counts);
+        check_suggestions(suggestions);
         check_references(clients, items, orders, batches, employees, machines);
     }
 
@@ -1401,6 +1466,7 @@ void DryCleaningShop::load_all() {
     materials_.swap(materials);
     employees_.swap(employees);
     machines_.swap(machines);
+    suggestions_.swap(suggestions);
     revision_ = loaded_ ? base + 1 : base;
     loaded_ = true;
 }

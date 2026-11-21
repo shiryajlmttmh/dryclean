@@ -6,12 +6,13 @@
 
 class QDoubleSpinBox;
 class QLineEdit;
+class DryCleaningShop;
 
 class ClientDialog : public ApplyDialog {
 public:
     using Apply = std::function<void(const QString& name, const QString& phone, double discount)>;
 
-    ClientDialog(const QString& title, const QString& name, const QString& phone, double discount, Apply apply,
+    ClientDialog(const DryCleaningShop& shop, const QString& title, const QString& name, const QString& phone, double discount, Apply apply,
                  QWidget* parent = nullptr);
 
 protected:

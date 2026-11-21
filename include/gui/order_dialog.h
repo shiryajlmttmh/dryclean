@@ -36,6 +36,7 @@ private:
     void remove_item(Id id);
     void build_header(QFormLayout* form);
     QWidget* build_items_box();
+    Id selected_client() const;
     OrderDraft make_draft() const;
     std::optional<OrderQuote> make_quote();
     void show_items(const std::optional<OrderQuote>& quote);
