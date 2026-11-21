@@ -7,15 +7,14 @@ public:
     MachinesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent = nullptr);
 
 protected:
-    void fill(QTableWidget* table) override;
+    void fill(TableWidget* table) override;
     void add_record() override;
     void edit_record(Id id) override;
     void remove_record(Id id) override;
-    void update_buttons() override;
+    void add_extra_actions(QHBoxLayout* actions, Id id) override;
+    QString removal_block(Id id) const override;
 
 private:
-    void show_history();
-    void service_selected();
-    QPushButton* history_button_;
-    QPushButton* service_button_;
+    void show_history(Id id);
+    void service_machine(Id id);
 };

@@ -4,7 +4,6 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
 
@@ -48,12 +47,6 @@ enum ForecastColumn { ForecastOrder, ForecastDeadline, ForecastReady, ForecastVe
 constexpr std::array<const char*, ForecastColumnCount> kForecastHeaders{"Заказ №", "Срок", "Прогноз готовности",
                                                                         "Оценка"};
 
-QTableWidget* make_table(const QStringList& headers, QWidget* parent) {
-    auto* table = new QTableWidget(parent);
-    configure_table(table, headers);
-    return table;
-}
-
 }
 
 PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
@@ -64,10 +57,10 @@ PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     summary_label_ = new QLabel(this);
     summary_label_->setWordWrap(true);
 
-    batches_table_ = make_table(make_headers(kBatchHeaders), this);
-    unplaced_table_ = make_table(make_headers(kUnplacedHeaders), this);
-    conflicts_table_ = make_table(make_headers(kConflictHeaders), this);
-    forecasts_table_ = make_table(make_headers(kForecastHeaders), this);
+    batches_table_ = new TableWidget(make_headers(kBatchHeaders), this, BatchItems);
+    unplaced_table_ = new TableWidget(make_headers(kUnplacedHeaders), this);
+    conflicts_table_ = new TableWidget(make_headers(kConflictHeaders), this);
+    forecasts_table_ = new TableWidget(make_headers(kForecastHeaders), this);
 
     auto* toolbar = new QHBoxLayout;
     toolbar->addWidget(build_button_);
@@ -105,7 +98,9 @@ void PlanningTab::refresh() {
 
 void PlanningTab::show_summary() {
     if (!plan_) {
-        summary_label_->setText(QStringLiteral("План не построен."));
+        summary_label_->setText(has_permission(shop_, employee_id_, Permission::BuildPlan)
+            ? QStringLiteral("Нажмите «Построить план», чтобы распределить изделия по машинам.")
+            : QStringLiteral("Для построения плана нужны права оператора."));
         return;
     }
     QString text = QStringLiteral("Партий: %1. Не размещено изделий: %2. Средняя загрузка: %3. Опозданий: %4. "
@@ -124,33 +119,38 @@ void PlanningTab::show_summary() {
 void PlanningTab::show_batches() {
     const TimePoint now = qt_convert::now();
     const std::size_t count = plan_ ? plan_->batches.size() : 0;
-    batches_table_->setRowCount(static_cast<int>(count));
+    batches_table_->reset_rows(static_cast<int>(count));
     for (std::size_t index = 0; index < count; ++index) {
         const PlannedBatch& batch = plan_->batches[index];
         const int row = static_cast<int>(index);
         set_cell(batches_table_, row, BatchMachine, machine_name(shop_, batch.machine_id));
         set_cell(batches_table_, row, BatchService, qt_convert::text(display_name(batch.service_type)));
         set_cell(batches_table_, row, BatchItems, item_tags(shop_, batch.item_ids));
-        set_cell(batches_table_, row, BatchWeight, QString::number(batch.total_weight_kg, 'f', kWeightDecimals), true);
-        set_cell(batches_table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio)), true);
-        set_cell(batches_table_, row, BatchStart, qt_convert::format_time(batch.planned_start_at));
-        set_cell(batches_table_, row, BatchReady, qt_convert::format_time_remaining(batch.planned_ready_at, now));
+        set_sortable_cell(batches_table_, row, BatchWeight,
+                          QString::number(batch.total_weight_kg, 'f', kWeightDecimals), batch.total_weight_kg, true);
+        set_sortable_cell(batches_table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio)),
+                          batch.fill_ratio, true);
+        set_time_cell(batches_table_, row, BatchStart, batch.planned_start_at);
+        set_sortable_cell(batches_table_, row, BatchReady, qt_convert::format_time_remaining(batch.planned_ready_at, now),
+                          time_sort_value(batch.planned_ready_at));
     }
+    batches_table_->finish_rows();
 }
 
 void PlanningTab::show_unplaced() {
     const std::size_t count = plan_ ? plan_->unplaced.size() : 0;
-    unplaced_table_->setRowCount(static_cast<int>(count));
+    unplaced_table_->reset_rows(static_cast<int>(count));
     for (std::size_t index = 0; index < count; ++index) {
         const auto& [item_id, reason] = plan_->unplaced[index];
         const int row = static_cast<int>(index);
         set_cell(unplaced_table_, row, UnplacedItem, item_tag(shop_, item_id));
         set_cell(unplaced_table_, row, UnplacedReason, qt_convert::text(reason));
     }
+    unplaced_table_->finish_rows();
 }
 
 void PlanningTab::show_conflicts() {
-    conflicts_table_->setRowCount(0);
+    conflicts_table_->reset_rows(0);
     if (!plan_) {
         return;
     }
@@ -171,10 +171,11 @@ void PlanningTab::show_conflicts() {
             ++row;
         }
     }
+    conflicts_table_->finish_rows();
 }
 
 void PlanningTab::show_forecasts() {
-    forecasts_table_->setRowCount(plan_ ? static_cast<int>(plan_->order_ready_at.size()) : 0);
+    forecasts_table_->reset_rows(plan_ ? static_cast<int>(plan_->order_ready_at.size()) : 0);
     if (!plan_) {
         return;
     }
@@ -185,13 +186,13 @@ void PlanningTab::show_forecasts() {
         if (ready_at && order != nullptr) {
             verdict = *ready_at > order->deadline() ? QStringLiteral("опоздание") : QStringLiteral("в срок");
         }
-        set_cell(forecasts_table_, row, ForecastOrder, QString::number(order_id), true);
-        set_cell(forecasts_table_, row, ForecastDeadline,
-                 order == nullptr ? QStringLiteral("?") : qt_convert::format_time(order->deadline()));
-        set_cell(forecasts_table_, row, ForecastReady, qt_convert::format_time(ready_at));
+        set_cell(forecasts_table_, row, ForecastOrder, order_id);
+        set_time_cell(forecasts_table_, row, ForecastDeadline, order ? std::optional(order->deadline()) : std::nullopt);
+        set_time_cell(forecasts_table_, row, ForecastReady, ready_at);
         set_cell(forecasts_table_, row, ForecastVerdict, verdict);
         ++row;
     }
+    forecasts_table_->finish_rows();
 }
 
 void PlanningTab::build() {

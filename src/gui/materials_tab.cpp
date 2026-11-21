@@ -5,9 +5,8 @@
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLineEdit>
-#include <QPushButton>
+#include <QMenu>
 #include <QStringList>
-#include <QTableWidget>
 #include <array>
 
 #include "display.h"
@@ -19,8 +18,6 @@
 namespace {
 
 constexpr int kStockDecimals = 2;
-constexpr int kSearchPosition = 0;
-constexpr int kSortPosition = 0;
 constexpr int kConsumptionDecimals = 3;
 constexpr double kMinAmount = 0.01;
 constexpr double kMaxAmount = 1000000.0;
@@ -51,53 +48,60 @@ QString services_text(const Material& material) {
 }
 
 MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : TableTab(shop, employee_id, Permission::ManageStock, make_headers(kMaterialHeaders), parent) {
+    : TableTab(shop, employee_id, Permission::ManageStock, make_headers(kMaterialHeaders), parent, MaterialName) {
     search_edit_ = new QLineEdit(this);
     search_edit_->setPlaceholderText(QStringLiteral("Поиск по названию"));
     search_edit_->setClearButtonEnabled(true);
+    search_edit_->setAccessibleName(QStringLiteral("Поиск материалов"));
 
     sort_tabs_ = new QTabBar(this);
     sort_tabs_->setExpanding(false);
     sort_tabs_->setTabData(sort_tabs_->addTab(QStringLiteral("По названию")), static_cast<int>(MaterialOrder::ByName));
     sort_tabs_->setTabData(sort_tabs_->addTab(QStringLiteral("По остатку")), static_cast<int>(MaterialOrder::ByStock));
 
-    restock_button_ = new QPushButton(QStringLiteral("Пополнить"), this);
-    write_off_button_ = new QPushButton(QStringLiteral("Списать"), this);
-
-    toolbar_->insertWidget(kSearchPosition, search_edit_, kStretch);
-    static_cast<QVBoxLayout*>(layout())->insertWidget(kSortPosition, sort_tabs_);
-    toolbar_->addWidget(restock_button_);
-    toolbar_->addWidget(write_off_button_);
+    auto* filters = new QHBoxLayout;
+    filters->addWidget(search_edit_, kStretch);
+    filters->addWidget(sort_tabs_);
+    static_cast<QVBoxLayout*>(layout())->insertLayout(1, filters);
 
     connect(search_edit_, &QLineEdit::textChanged, this, &TableTab::refresh);
     connect(sort_tabs_, &QTabBar::currentChanged, this, &TableTab::refresh);
-    connect(restock_button_, &QPushButton::clicked, this, &MaterialsTab::restock);
-    connect(write_off_button_, &QPushButton::clicked, this, &MaterialsTab::write_off);
 }
 
-void MaterialsTab::fill(QTableWidget* table) {
+void MaterialsTab::fill(TableWidget* table) {
+    const QString query = search_edit_->text().trimmed();
+    if (!query.isEmpty()) {
+        table->set_empty_text(QStringLiteral("Материалы не найдены. Измените поисковый запрос."));
+    }
     const std::vector<Material> found = shop_.find_materials(
-        search_edit_->text().toStdString(),
+        query.toStdString(),
         static_cast<MaterialOrder>(sort_tabs_->tabData(sort_tabs_->currentIndex()).toInt()));
-    table->setRowCount(static_cast<int>(found.size()));
+    table->reset_rows(static_cast<int>(found.size()));
     int row = 0;
     for (const Material& material : found) {
-        set_cell(table, row, MaterialId, QString::number(material.id()), true);
+        set_cell(table, row, MaterialId, material.id());
         set_cell(table, row, MaterialName, qt_convert::text(material.name()));
         set_cell(table, row, MaterialUnit, qt_convert::text(material.unit()));
-        set_cell(table, row, MaterialStock, QString::number(material.stock(), 'f', kStockDecimals), true);
-        set_cell(table, row, MaterialConsumption, QString::number(material.consumption_per_kg(), 'f', kConsumptionDecimals),
-                 true);
+        set_sortable_cell(table, row, MaterialStock, QString::number(material.stock(), 'f', kStockDecimals),
+                          material.stock(), true);
+        set_sortable_cell(table, row, MaterialConsumption,
+                          QString::number(material.consumption_per_kg(), 'f', kConsumptionDecimals),
+                          material.consumption_per_kg(), true);
         set_cell(table, row, MaterialServices, services_text(material));
         ++row;
     }
 }
 
-void MaterialsTab::update_buttons() {
-    TableTab::update_buttons();
-    const bool can_change = is_allowed() && selected().has_value();
-    restock_button_->setEnabled(can_change);
-    write_off_button_->setEnabled(can_change);
+void MaterialsTab::add_extra_actions(QHBoxLayout* actions, Id id) {
+    if (!is_allowed()) return;
+    auto* menu = add_more_actions(actions, QStringLiteral("Операции со складской записью №%1").arg(id));
+    menu->addAction(QStringLiteral("Пополнить"), this, [this, id] { restock(id); });
+    auto* write_off = menu->addAction(QStringLiteral("Списать"), this, [this, id] { this->write_off(id); });
+    if (shop_.materials().get(id).stock() <= 0.0) {
+        write_off->setEnabled(false);
+        write_off->setToolTip(QStringLiteral("Сначала пополните остаток материала."));
+        menu->setToolTipsVisible(true);
+    }
 }
 
 void MaterialsTab::add_record() {
@@ -121,32 +125,29 @@ void MaterialsTab::edit_record(Id id) {
 
 void MaterialsTab::remove_record(Id id) { shop_.remove_material(id, employee_id_); }
 
-void MaterialsTab::change_stock(const QString& title, const QString& prompt,
+void MaterialsTab::change_stock(Id id, const QString& title, const QString& prompt,
                                 const std::function<void(Id, double)>& apply) {
-    const std::optional<Id> id = selected();
-    if (!id) {
-        return;
-    }
+    if (!is_allowed()) return;
     QInputDialog dialog(this);
     dialog.setWindowTitle(title);
-    dialog.setLabelText(prompt.arg(qt_convert::text(shop_.materials().get(*id).unit())));
+    dialog.setLabelText(prompt.arg(qt_convert::text(shop_.materials().get(id).unit())));
     dialog.setInputMode(QInputDialog::DoubleInput);
     dialog.setDoubleRange(kMinAmount, kMaxAmount);
     dialog.setDoubleDecimals(kStockDecimals);
     dialog.setDoubleValue(kDefaultAmount);
     dialog.setOkButtonText(QStringLiteral("ОК"));
     dialog.setCancelButtonText(QStringLiteral("Отмена"));
-    if (dialog.exec() == QDialog::Accepted && run_guarded(this, [&] { apply(*id, dialog.doubleValue()); })) {
+    if (dialog.exec() == QDialog::Accepted && run_guarded(this, [&] { apply(id, dialog.doubleValue()); })) {
         emit changed();
     }
 }
 
-void MaterialsTab::restock() {
-    change_stock(QStringLiteral("Пополнение склада"), QStringLiteral("Сколько добавить (%1):"),
-                 [this](Id id, double amount) { shop_.restock_material(id, amount, employee_id_); });
+void MaterialsTab::restock(Id id) {
+    change_stock(id, QStringLiteral("Пополнение склада"), QStringLiteral("Сколько добавить (%1):"),
+                 [this](Id material_id, double amount) { shop_.restock_material(material_id, amount, employee_id_); });
 }
 
-void MaterialsTab::write_off() {
-    change_stock(QStringLiteral("Списание со склада"), QStringLiteral("Сколько списать (%1):"),
-                 [this](Id id, double amount) { shop_.write_off_material(id, amount, employee_id_); });
+void MaterialsTab::write_off(Id id) {
+    change_stock(id, QStringLiteral("Списание со склада"), QStringLiteral("Сколько списать (%1):"),
+                 [this](Id material_id, double amount) { shop_.write_off_material(material_id, amount, employee_id_); });
 }

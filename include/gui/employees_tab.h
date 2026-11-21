@@ -7,8 +7,9 @@ public:
     EmployeesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent = nullptr);
 
 protected:
-    void fill(QTableWidget* table) override;
+    void fill(TableWidget* table) override;
     void add_record() override;
     void edit_record(Id id) override;
     void remove_record(Id id) override;
+    QString removal_block(Id id) const override;
 };

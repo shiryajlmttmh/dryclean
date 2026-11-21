@@ -2,23 +2,20 @@
 
 #include <QStringList>
 #include <QWidget>
-#include <optional>
 
 #include "shop.h"
 
 class QDialog;
 class QHBoxLayout;
 class QPushButton;
-class QTableWidget;
+class TableWidget;
 
 class TableTab : public QWidget {
     Q_OBJECT
 
 public:
-    static constexpr int kIdColumn = 0;
-
     TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-             QWidget* parent);
+             QWidget* parent, int stretch_column, bool has_view_actions = false);
 
 public slots:
     void refresh();
@@ -27,28 +24,24 @@ signals:
     void changed();
 
 protected:
-    virtual void fill(QTableWidget* table) = 0;
+    virtual void fill(TableWidget* table) = 0;
     virtual void add_record() = 0;
     virtual void edit_record(Id id) = 0;
     virtual void remove_record(Id id) = 0;
-    virtual void update_buttons();
+    virtual void add_extra_actions(QHBoxLayout* actions, Id id);
+    virtual QString removal_block(Id id) const;
 
     void show_dialog(QDialog& dialog);
-    std::optional<Id> selected() const;
     bool is_allowed() const;
 
     DryCleaningShop& shop_;
     Id employee_id_;
-    QHBoxLayout* toolbar_;
-    QTableWidget* table_;
-
-private slots:
-    void edit_selected();
-    void remove_selected();
 
 private:
+    void confirm_removal(Id id);
+
+    TableWidget* table_;
     Permission permission_;
+    bool has_view_actions_;
     QPushButton* add_button_;
-    QPushButton* edit_button_;
-    QPushButton* remove_button_;
 };

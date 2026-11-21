@@ -5,8 +5,7 @@
 #include "shop.h"
 
 class QTabBar;
-class QPushButton;
-class QTableWidget;
+class TableWidget;
 
 class BatchesTab : public QWidget {
     Q_OBJECT
@@ -20,16 +19,12 @@ public slots:
 signals:
     void changed();
 
-private slots:
-    void complete();
-    void update_buttons();
-
 private:
+    void complete(Id id);
     void fill_row(int row, const Batch& batch, TimePoint now);
 
     DryCleaningShop& shop_;
     Id employee_id_;
     QTabBar* filter_tabs_;
-    QPushButton* complete_button_;
-    QTableWidget* table_;
+    TableWidget* table_;
 };

@@ -5,8 +5,7 @@
 #include "shop.h"
 
 class QLabel;
-class QPushButton;
-class QTableWidget;
+class TableWidget;
 
 class OrderItemsDialog : public QDialog {
     Q_OBJECT
@@ -14,17 +13,15 @@ class OrderItemsDialog : public QDialog {
 public:
     OrderItemsDialog(DryCleaningShop& shop, Id employee_id, Id order_id, QWidget* parent = nullptr);
 
-private slots:
-    void refresh();
-    void edit_item();
-
 private:
+    void refresh();
+    void edit_item(Id id);
     bool can_edit() const;
 
     DryCleaningShop& shop_;
     Id employee_id_;
     Id order_id_;
     QLabel* summary_label_;
-    QTableWidget* table_;
-    QPushButton* edit_button_;
+    TableWidget* table_;
+    QLabel* edit_hint_;
 };

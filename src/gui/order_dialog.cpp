@@ -5,12 +5,10 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
-#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
-#include <QSignalBlocker>
-#include <QTableWidget>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <array>
 
 #include "display.h"
@@ -23,7 +21,7 @@
 
 namespace {
 
-constexpr int kDialogWidth = 780;
+constexpr int kDialogWidth = 900;
 constexpr int kDialogHeight = 600;
 constexpr int kWeightDecimals = 2;
 constexpr const char* kNoCost = "—";
@@ -31,7 +29,7 @@ constexpr const char* kNoCost = "—";
 enum ItemColumn { ItemKind, ItemMaterial, ItemColor, ItemWeight, ItemSoil, ItemStains, ItemCost, ItemService, ItemColumnCount };
 
 constexpr std::array<const char*, ItemColumnCount> kItemHeaders{"Изделие", "Материал", "Цвет", "Масса",
-                                                                "Загрязнение", "Пятен", "Цена", "Услуга"};
+                                                                "Состояние", "Пятен", "Цена", "Услуги"};
 
 }
 
@@ -84,25 +82,14 @@ QWidget* OrderDialog::build_items_box() {
     auto* box = new QGroupBox(QStringLiteral("Изделия"), this);
     auto* layout = new QVBoxLayout(box);
 
-    items_table_ = new QTableWidget(box);
-    configure_table(items_table_, make_headers(kItemHeaders));
+    auto* add_button = new QPushButton(QStringLiteral("&Добавить изделие"), box);
+    layout->addWidget(add_button, 0, Qt::AlignLeft);
+    items_table_ = new TableWidget(make_headers(kItemHeaders), box, ItemService, true);
+    items_table_->add_stretch_column(ItemKind);
+    items_table_->set_empty_text(QStringLiteral("Нажмите «Добавить изделие», чтобы заполнить заказ."));
     layout->addWidget(items_table_);
 
-    auto* add_button = new QPushButton(QStringLiteral("Добавить"), box);
-    edit_button_ = new QPushButton(QStringLiteral("Изменить"), box);
-    remove_button_ = new QPushButton(QStringLiteral("Удалить"), box);
-    auto* row = new QHBoxLayout;
-    row->addStretch(kStretch);
-    row->addWidget(add_button);
-    row->addWidget(edit_button_);
-    row->addWidget(remove_button_);
-    layout->addLayout(row);
-
     connect(add_button, &QPushButton::clicked, this, &OrderDialog::add_item);
-    connect(edit_button_, &QPushButton::clicked, this, &OrderDialog::edit_item);
-    connect(remove_button_, &QPushButton::clicked, this, &OrderDialog::remove_item);
-    connect(items_table_, &QTableWidget::cellDoubleClicked, this, &OrderDialog::edit_item);
-    connect(items_table_, &QTableWidget::itemSelectionChanged, this, &OrderDialog::refresh);
     return box;
 }
 
@@ -111,7 +98,10 @@ Id OrderDialog::accepted_order_id() const noexcept { return accepted_id_; }
 OrderDraft OrderDialog::make_draft() const {
     OrderDraft draft;
     draft.client_id = static_cast<Id>(client_box_->currentData().toUInt());
-    draft.items = items_;
+    draft.items.reserve(items_.size());
+    for (const DraftItem& entry : items_) {
+        draft.items.push_back(entry.item);
+    }
     draft.urgent = urgent_box_->isChecked();
     return draft;
 }
@@ -133,38 +123,43 @@ void OrderDialog::refresh() {
     const std::optional<OrderQuote> quote = make_quote();
     show_items(quote);
     show_summary(quote);
-    const bool has_selection = selected_position(items_table_, items_.size()).has_value();
-    edit_button_->setEnabled(has_selection);
-    remove_button_->setEnabled(has_selection);
     accept_button_->setEnabled(quote.has_value());
 }
 
 void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
-    const std::optional<std::size_t> selected = selected_position(items_table_, items_.size());
-    const QSignalBlocker blocker(items_table_);
-    items_table_->setRowCount(static_cast<int>(items_.size()));
+    items_table_->reset_rows(static_cast<int>(items_.size()));
     for (std::size_t index = 0; index < items_.size(); ++index) {
-        const Item& item = items_[index];
+        const auto& [id, item] = items_[index];
         const int row = static_cast<int>(index);
         const QString cost = quote ? qt_convert::text(format_money(quote->item_costs[index])) : QString::fromUtf8(kNoCost);
         set_cell(items_table_, row, ItemKind, qt_convert::text(item.kind()));
         set_cell(items_table_, row, ItemMaterial, qt_convert::text(item.material_name()));
         set_cell(items_table_, row, ItemColor, qt_convert::text(item.color_name()));
-        set_cell(items_table_, row, ItemWeight, QString::number(item.weight_kg(), 'f', kWeightDecimals), true);
+        set_sortable_cell(items_table_, row, ItemWeight, QString::number(item.weight_kg(), 'f', kWeightDecimals),
+                          item.weight_kg(), true);
         set_cell(items_table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
-        set_cell(items_table_, row, ItemStains, QString::number(item.stain_count()), true);
-        set_cell(items_table_, row, ItemCost, cost, true);
+        set_cell(items_table_, row, ItemStains, item.stain_count());
+        set_sortable_cell(items_table_, row, ItemCost, cost, quote ? QVariant(quote->item_costs[index]) : QVariant(),
+                          true);
         set_cell(items_table_, row, ItemService, item_services_text(item));
-        set_row_position(items_table_, row, index);
-        if (selected == index) {
-            items_table_->selectRow(row);
-        }
+        auto* actions = make_row_actions(items_table_, row, id);
+        add_edit_action(actions, QStringLiteral("Изменить изделие «%1»").arg(qt_convert::text(item.kind())),
+                        [this, id] { edit_item(id); });
+        add_remove_action(actions, QStringLiteral("Удалить изделие «%1»").arg(qt_convert::text(item.kind())),
+                          [this, id] { remove_item(id); });
     }
+    items_table_->finish_rows();
 }
 
 void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
     if (!quote) {
-        summary_label_->setText(QStringLiteral("Добавьте изделия, чтобы рассчитать стоимость и срок."));
+        if (client_box_->count() == 0) {
+            summary_label_->setText(QStringLiteral("Добавьте клиента на вкладке «Клиенты», затем откройте приём заказа снова."));
+        } else if (items_.empty()) {
+            summary_label_->setText(QStringLiteral("После добавления изделия здесь появятся цена и срок."));
+        } else {
+            summary_label_->clear();
+        }
         return;
     }
     summary_label_->setText(QStringLiteral("Скидка клиента: %1\nИтого: %2\nСрок выполнения: %3\nГотовность не позже: %4")
@@ -177,29 +172,29 @@ void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
 void OrderDialog::add_item() {
     ItemDialog dialog(Item(), QStringLiteral("Новое изделие"), this);
     if (dialog.exec() == QDialog::Accepted) {
-        items_.push_back(dialog.item());
+        items_.push_back({next_item_id_++, dialog.item()});
         refresh();
     }
 }
 
-void OrderDialog::edit_item() {
-    const std::optional<std::size_t> index = selected_position(items_table_, items_.size());
-    if (!index) {
-        return;
-    }
-    ItemDialog dialog(items_[*index], QStringLiteral("Изменение изделия"), this);
+void OrderDialog::edit_item(Id id) {
+    const auto entry = std::ranges::find(items_, id, &DraftItem::id);
+    if (entry == items_.end()) return;
+    ItemDialog dialog(entry->item, QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() == QDialog::Accepted) {
-        items_[*index] = dialog.item();
+        entry->item = dialog.item();
         refresh();
     }
 }
 
-void OrderDialog::remove_item() {
-    const std::optional<std::size_t> index = selected_position(items_table_, items_.size());
-    if (!index) {
+void OrderDialog::remove_item(Id id) {
+    const auto entry = std::ranges::find(items_, id, &DraftItem::id);
+    if (entry == items_.end() ||
+        !confirm(this, QStringLiteral("Удаление изделия"),
+                 QStringLiteral("Удалить изделие «%1» из заказа?").arg(qt_convert::text(entry->item.kind())))) {
         return;
     }
-    items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(*index));
+    items_.erase(entry);
     refresh();
 }
 

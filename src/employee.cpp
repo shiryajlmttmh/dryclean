@@ -35,12 +35,6 @@ void Employee::set_login(std::string login) { login_ = normalize_login(std::move
 
 void Employee::set_password(const std::string& value) { password_hash_ = password::hash(value); }
 
-void Employee::copy_password_from(const Employee& employee) {
-    password_hash_ = employee.password_hash_;
-}
-
-bool Employee::has_password() const noexcept { return !password_hash_.empty(); }
-
 bool Employee::check_password(const std::string& value) const { return password::verify(value, password_hash_); }
 
 void Employee::set_role(EmployeeRole role) {
@@ -70,7 +64,7 @@ std::set<Permission> Employee::permissions_for(EmployeeRole role) {
 }
 
 void Employee::validate() const {
-    if (!password_hash_.empty() && !password::valid_hash(password_hash_)) {
+    if (!password::valid_hash(password_hash_)) {
         throw InvalidInputException("password", "некорректный формат хеша пароля");
     }
     require_text("name", name_);

@@ -1,11 +1,9 @@
 #include "gui/order_items_dialog.h"
 
 #include <QDialogButtonBox>
-#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
 #include <algorithm>
@@ -18,7 +16,7 @@
 
 namespace {
 
-constexpr int kDialogWidth = 820;
+constexpr int kDialogWidth = 1180;
 constexpr int kDialogHeight = 420;
 constexpr int kWeightDecimals = 2;
 
@@ -38,7 +36,7 @@ enum ItemColumn {
 };
 
 constexpr std::array<const char*, ItemColumnCount> kItemHeaders{"№", "Метка", "Изделие", "Материал", "Цвет",
-                                                                "Масса, кг", "Загрязнение", "Пятен", "Цена", "Услуги", "Выполнено этапов"};
+                                                                "Масса, кг", "Состояние", "Пятен", "Цена", "Услуги", "Этапы"};
 
 }
 
@@ -48,33 +46,26 @@ OrderItemsDialog::OrderItemsDialog(DryCleaningShop& shop, Id employee_id, Id ord
     resize(kDialogWidth, kDialogHeight);
 
     summary_label_ = new QLabel(this);
-    table_ = new QTableWidget(this);
-    configure_table(table_, make_headers(kItemHeaders));
-
-    edit_button_ = new QPushButton(QStringLiteral("Изменить"), this);
+    table_ = new TableWidget(make_headers(kItemHeaders), this, ItemService, true);
+    table_->add_stretch_column(ItemKind);
+    edit_hint_ = new QLabel(this);
+    edit_hint_->setWordWrap(true);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("Закрыть"));
 
-    auto* row = new QHBoxLayout;
-    row->addWidget(edit_button_);
-    row->addStretch(kStretch);
-    row->addWidget(buttons);
-
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(summary_label_);
+    layout->addWidget(edit_hint_);
     layout->addWidget(table_, kStretch);
-    layout->addLayout(row);
+    layout->addWidget(buttons);
 
-    connect(edit_button_, &QPushButton::clicked, this, &OrderItemsDialog::edit_item);
-    connect(table_, &QTableWidget::cellDoubleClicked, this, &OrderItemsDialog::edit_item);
-    connect(table_, &QTableWidget::itemSelectionChanged, this, &OrderItemsDialog::refresh);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     refresh();
 }
 
 bool OrderItemsDialog::can_edit() const {
     return has_permission(shop_, employee_id_, Permission::AcceptOrders) &&
-           shop_.orders().get(order_id_).status() == OrderStatus::Accepted;
+           shop_.is_order_editable(order_id_);
 }
 
 void OrderItemsDialog::refresh() {
@@ -85,42 +76,50 @@ void OrderItemsDialog::refresh() {
                                      qt_convert::format_time(order.deadline())));
     const std::optional<Id> selected = selected_id(table_, ItemId);
     const QSignalBlocker blocker(table_);
-    table_->setRowCount(static_cast<int>(order.item_ids().size()));
+    const bool editable = can_edit();
+    table_->setColumnHidden(table_->actions_column(), !editable);
+    edit_hint_->setVisible(!editable);
+    edit_hint_->setText(shop_.is_order_editable(order_id_)
+        ? QStringLiteral("Для изменения изделий нужны права приёмщика.")
+        : QStringLiteral("Изделия можно изменить до передачи заказа в обработку."));
+    table_->reset_rows(static_cast<int>(order.item_ids().size()));
     int row = 0;
     std::vector<Id> item_ids = order.item_ids();
     std::stable_sort(item_ids.begin(), item_ids.end(), [this](Id left, Id right) {
         return QString::localeAwareCompare(qt_convert::text(shop_.items().get(left).tag()),
                                            qt_convert::text(shop_.items().get(right).tag())) < 0;
     });
-    table_->setCurrentCell(-1, -1);
     for (const Id id : item_ids) {
         const Item& item = shop_.items().get(id);
-        set_cell(table_, row, ItemId, QString::number(id), true);
+        set_cell(table_, row, ItemId, id);
         set_cell(table_, row, ItemTag, qt_convert::text(item.tag()));
         set_cell(table_, row, ItemKind, qt_convert::text(item.kind()));
         set_cell(table_, row, ItemMaterial, qt_convert::text(item.material_name()));
         set_cell(table_, row, ItemColor, qt_convert::text(item.color_name()));
-        set_cell(table_, row, ItemWeight, QString::number(item.weight_kg(), 'f', kWeightDecimals), true);
+        set_sortable_cell(table_, row, ItemWeight, QString::number(item.weight_kg(), 'f', kWeightDecimals),
+                          item.weight_kg(), true);
         set_cell(table_, row, ItemSoil, qt_convert::text(display_name(item.soil_level())));
-        set_cell(table_, row, ItemStains, QString::number(item.stain_count()), true);
-        set_cell(table_, row, ItemCost, qt_convert::text(format_money(shop_.calculate_item_cost(id))), true);
+        set_cell(table_, row, ItemStains, item.stain_count());
+        const double cost = shop_.calculate_item_cost(id);
+        set_sortable_cell(table_, row, ItemCost, qt_convert::text(format_money(cost)), cost, true);
         set_cell(table_, row, ItemService, item_services_text(item));
-        set_cell(table_, row, ItemProgress,
-                 QStringLiteral("%1 из %2").arg(item.completed_batches().size()).arg(item.services().size()));
-        if (selected == id) {
-            table_->selectRow(row);
+        const auto completed = static_cast<qulonglong>(item.completed_batches().size());
+        set_sortable_cell(table_, row, ItemProgress, QStringLiteral("%1 из %2").arg(completed).arg(item.services().size()),
+                          completed);
+        if (editable) {
+            add_edit_action(make_row_actions(table_, row, id),
+                            QStringLiteral("Изменить изделие %1").arg(qt_convert::text(item.tag())),
+                            [this, id] { edit_item(id); });
         }
         ++row;
     }
-    edit_button_->setEnabled(can_edit() && selected_id(table_, ItemId).has_value());
+    table_->finish_rows();
+    restore_selected_id(table_, ItemId, selected);
 }
 
-void OrderItemsDialog::edit_item() {
-    const std::optional<Id> id = selected_id(table_, ItemId);
-    if (!id || !can_edit()) {
-        return;
-    }
-    ItemDialog dialog(shop_.items().get(*id), QStringLiteral("Изменение изделия"), this);
+void OrderItemsDialog::edit_item(Id id) {
+    if (!can_edit()) return;
+    ItemDialog dialog(shop_.items().get(id), QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }

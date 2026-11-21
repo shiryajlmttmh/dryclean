@@ -6,7 +6,7 @@
 #include "shop.h"
 
 class QCloseEvent;
-class QTabBar;
+class QButtonGroup;
 class QLabel;
 class QLineEdit;
 class BatchesTab;
@@ -15,7 +15,7 @@ class QPushButton;
 class QTabWidget;
 class MachinesTab;
 class TableTab;
-class QTableWidget;
+class TableWidget;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,17 +33,17 @@ private slots:
     void refresh_clients();
     void refresh_orders();
     void accept_order();
-    void mark_order_ready();
-    void issue_order();
-    void remove_order();
-    void show_order_items();
-    void update_order_buttons();
     void add_client();
-    void edit_client();
-    void remove_client();
-    void update_client_buttons();
 
 private:
+    void mark_order_ready(Id id);
+    void issue_order(Id id);
+    void remove_order(Id id);
+    void show_order_items(Id id);
+    void show_order_history(Id id);
+    void fill_order_actions(int row, const Order& order, TimePoint now);
+    void edit_client(Id id);
+    void remove_client(Id id);
     void build_menu();
     void add_record_tab(QTabWidget* tabs, TableTab* tab, const QString& title);
     QWidget* build_clients_tab();
@@ -54,20 +54,14 @@ private:
     DryCleaningShop& shop_;
     Id employee_id_;
     QLineEdit* client_search_ = nullptr;
-    QTableWidget* clients_table_ = nullptr;
+    TableWidget* clients_table_ = nullptr;
     QPushButton* add_client_button_ = nullptr;
-    QPushButton* edit_client_button_ = nullptr;
-    QPushButton* remove_client_button_ = nullptr;
-    QTabBar* status_tabs_ = nullptr;
+    QButtonGroup* order_filters_ = nullptr;
     QPushButton* accept_order_button_ = nullptr;
-    QPushButton* ready_order_button_ = nullptr;
-    QPushButton* issue_order_button_ = nullptr;
-    QPushButton* remove_order_button_ = nullptr;
-    QPushButton* order_items_button_ = nullptr;
     PlanningTab* planning_tab_ = nullptr;
     BatchesTab* batches_tab_ = nullptr;
     MachinesTab* machines_tab_ = nullptr;
     std::vector<TableTab*> record_tabs_;
-    QTableWidget* orders_table_ = nullptr;
+    TableWidget* orders_table_ = nullptr;
     QLabel* status_label_ = nullptr;
 };

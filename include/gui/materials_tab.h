@@ -12,20 +12,18 @@ public:
     MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* parent = nullptr);
 
 protected:
-    void fill(QTableWidget* table) override;
+    void fill(TableWidget* table) override;
     void add_record() override;
     void edit_record(Id id) override;
     void remove_record(Id id) override;
-    void update_buttons() override;
+    void add_extra_actions(QHBoxLayout* actions, Id id) override;
 
 private:
-    void restock();
-    void write_off();
-    void change_stock(const QString& title, const QString& prompt,
+    void restock(Id id);
+    void write_off(Id id);
+    void change_stock(Id id, const QString& title, const QString& prompt,
                       const std::function<void(Id, double)>& apply);
 
     QLineEdit* search_edit_;
     QTabBar* sort_tabs_;
-    QPushButton* restock_button_;
-    QPushButton* write_off_button_;
 };

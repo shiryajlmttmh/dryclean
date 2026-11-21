@@ -25,9 +25,6 @@ int main(int argc, char* argv[]) {
     DryCleaningShop shop(qt_convert::path(data_directory));
     try {
         shop.load_all();
-        if (shop.is_dirty()) {
-            shop.save_all();
-        }
     } catch (const ShopException& error) {
         QMessageBox::critical(nullptr, qt_convert::text(error.title()), qt_convert::text(error.what()));
         return EXIT_FAILURE;

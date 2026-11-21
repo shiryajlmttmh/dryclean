@@ -11,7 +11,7 @@ class QComboBox;
 class QFormLayout;
 class QLabel;
 class QPushButton;
-class QTableWidget;
+class TableWidget;
 
 class OrderDialog : public QDialog {
     Q_OBJECT
@@ -24,11 +24,16 @@ public:
 private slots:
     void refresh();
     void add_item();
-    void edit_item();
-    void remove_item();
     void try_accept();
 
 private:
+    struct DraftItem {
+        Id id;
+        Item item;
+    };
+
+    void edit_item(Id id);
+    void remove_item(Id id);
     void build_header(QFormLayout* form);
     QWidget* build_items_box();
     OrderDraft make_draft() const;
@@ -40,12 +45,11 @@ private:
     Id employee_id_;
     QComboBox* client_box_;
     QCheckBox* urgent_box_;
-    QTableWidget* items_table_;
-    QPushButton* edit_button_;
-    QPushButton* remove_button_;
+    TableWidget* items_table_;
     QPushButton* accept_button_;
     QLabel* summary_label_;
     QLabel* error_label_;
-    std::vector<Item> items_;
+    std::vector<DraftItem> items_;
+    Id next_item_id_ = 1;
     Id accepted_id_ = 0;
 };

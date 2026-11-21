@@ -1,6 +1,5 @@
 #include "gui/employees_tab.h"
 
-#include <QTableWidget>
 #include <array>
 #include <algorithm>
 
@@ -18,17 +17,17 @@ constexpr std::array<const char*, EmployeeColumnCount> kEmployeeHeaders{"№", "
 }
 
 EmployeesTab::EmployeesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kEmployeeHeaders), parent) {}
+    : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kEmployeeHeaders), parent, EmployeeName) {}
 
-void EmployeesTab::fill(QTableWidget* table) {
-    table->setRowCount(static_cast<int>(shop_.employees().size()));
+void EmployeesTab::fill(TableWidget* table) {
+    table->reset_rows(static_cast<int>(shop_.employees().size()));
     int row = 0;
     std::vector<Employee> employees(shop_.employees().begin(), shop_.employees().end());
     std::stable_sort(employees.begin(), employees.end(), [](const Employee& left, const Employee& right) {
         return QString::localeAwareCompare(qt_convert::text(left.name()), qt_convert::text(right.name())) < 0;
     });
     for (const Employee& employee : employees) {
-        set_cell(table, row, EmployeeId, QString::number(employee.id()), true);
+        set_cell(table, row, EmployeeId, employee.id());
         set_cell(table, row, EmployeeName, qt_convert::text(employee.name()));
         set_cell(table, row, EmployeeLogin, qt_convert::text(employee.login()));
         set_cell(table, row, EmployeeRoleName, qt_convert::text(display_name(employee.role())));
@@ -56,3 +55,7 @@ void EmployeesTab::edit_record(Id id) {
 }
 
 void EmployeesTab::remove_record(Id id) { shop_.remove_employee(id, employee_id_); }
+
+QString EmployeesTab::removal_block(Id id) const {
+    return qt_convert::text(shop_.employee_removal_block(id, employee_id_));
+}

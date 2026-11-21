@@ -22,8 +22,6 @@ public:
     void set_login(std::string login);
     void set_role(EmployeeRole role);
     void set_password(const std::string& password);
-    void copy_password_from(const Employee& employee);
-    bool has_password() const noexcept;
     bool check_password(const std::string& password) const;
 
     bool has_permission(Permission permission) const noexcept;

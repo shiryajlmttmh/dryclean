@@ -14,7 +14,7 @@ EmployeeDialog::EmployeeDialog(const QString& title, const Employee& initial, Ap
     login_edit_ = new QLineEdit(qt_convert::text(initial.login()), this);
     password_edit_ = new QLineEdit(this);
     password_edit_->setEchoMode(QLineEdit::Password);
-    password_edit_->setPlaceholderText(initial.has_password() ? QStringLiteral("Пусто — сохранить пароль")
+    password_edit_->setPlaceholderText(initial.id() != 0 ? QStringLiteral("Пусто — сохранить пароль")
                                                             : QStringLiteral("Новый пароль, минимум 8 символов"));
     confirmation_edit_ = new QLineEdit(this);
     confirmation_edit_->setEchoMode(QLineEdit::Password);
@@ -39,7 +39,7 @@ void EmployeeDialog::apply() {
     if (password_edit_->text() != confirmation_edit_->text()) {
         throw InvalidInputException("password", "пароли не совпадают");
     }
-    if (!password_edit_->text().isEmpty() || !updated.has_password()) {
+    if (!password_edit_->text().isEmpty() || initial_.id() == 0) {
         updated.set_password(password_edit_->text().toStdString());
     }
     apply_(updated);

@@ -37,6 +37,11 @@ constexpr const char* kFileExtension = ".txt";
 constexpr std::size_t kFileCount = 7;
 
 void check_employees(const Repository<Employee>& employees) {
+    if (std::none_of(employees.begin(), employees.end(), [](const Employee& employee) {
+            return employee.role() == EmployeeRole::Administrator;
+        })) {
+        throw IntegrityException("в хранилище должна быть учётная запись администратора");
+    }
     std::set<std::string> logins;
     for (const Employee& employee : employees) {
         if (!logins.insert(employee.login()).second) {
@@ -377,28 +382,20 @@ const Employee& DryCleaningShop::authenticate(const std::string& login, const st
     throw InvalidInputException("login", "неверный логин или пароль");
 }
 
-bool DryCleaningShop::needs_password_setup() const noexcept {
-    return std::none_of(employees_.begin(), employees_.end(), [](const Employee& employee) {
-        return employee.has_password();
-    });
-}
+bool DryCleaningShop::needs_password_setup() const noexcept { return loaded_ && employees_.empty(); }
 
-void DryCleaningShop::initialize_admin_password(const std::string& login, const std::string& password) {
-    if (!loaded_ || !needs_password_setup()) {
+Id DryCleaningShop::initialize_admin_password(const std::string& password) {
+    if (!needs_password_setup()) {
         throw InvalidInputException("password", "первичная настройка пароля недоступна");
     }
-    const std::string key = normalize_login(login);
-    Repository<Employee> updated = employees_;
-    const auto admin = std::find_if(updated.begin(), updated.end(), [&key](const Employee& employee) {
-        return employee.login() == key && employee.role() == EmployeeRole::Administrator;
-    });
-    if (admin == updated.end()) {
-        throw InvalidInputException("login", "для первичной настройки укажите логин администратора");
+    if (revision_ == std::numeric_limits<Revision>::max()) {
+        throw InvalidInputException("revision", "исчерпан счётчик изменений");
     }
-    begin_mutation(admin->id(), Permission::ManageStaff);
-    admin->set_password(password);
+    Employee admin(kInitialAdminName, kInitialAdminLogin, EmployeeRole::Administrator);
+    admin.set_password(password);
+    Repository<Employee> updated = employees_;
+    const Id id = updated.add(std::move(admin));
     const Revision previous_revision = revision_;
-    const bool previous_dirty = dirty_;
     employees_.swap(updated);
     publish();
     try {
@@ -406,9 +403,10 @@ void DryCleaningShop::initialize_admin_password(const std::string& login, const 
     } catch (...) {
         employees_.swap(updated);
         revision_ = previous_revision;
-        dirty_ = previous_dirty;
+        dirty_ = false;
         throw;
     }
+    return id;
 }
 
 void DryCleaningShop::require_permission(Id employee_id, Permission permission) const {
@@ -441,7 +439,7 @@ void DryCleaningShop::ensure_storage() {
 
 std::size_t DryCleaningShop::administrators_count() const {
     return static_cast<std::size_t>(std::count_if(employees_.begin(), employees_.end(), [](const Employee& employee) {
-        return employee.role() == EmployeeRole::Administrator && employee.has_password();
+        return employee.role() == EmployeeRole::Administrator;
     }));
 }
 
@@ -453,9 +451,6 @@ bool DryCleaningShop::has_scheduled_batch(Id machine_id) const {
 
 Id DryCleaningShop::add_employee(Employee employee, Id acting_employee) {
     begin_mutation(acting_employee, Permission::ManageStaff);
-    if (!employee.has_password()) {
-        throw InvalidInputException("password", "задайте пароль нового сотрудника");
-    }
     employee.validate();
     for (const Employee& other : employees_) {
         if (other.login() == employee.login()) {
@@ -472,24 +467,19 @@ Id DryCleaningShop::add_employee(Employee employee, Id acting_employee) {
 void DryCleaningShop::update_employee(const Employee& employee, Id acting_employee) {
     begin_mutation(acting_employee, Permission::ManageStaff);
     const Employee& current = employees_.get(employee.id());
-    Employee updated = current;
-    updated.set_name(employee.name());
-    updated.set_login(employee.login());
-    updated.set_role(employee.role());
-    if (employee.has_password()) updated.copy_password_from(employee);
-    updated.validate();
+    employee.validate();
     for (const Employee& other : employees_) {
-        if (other.id() != updated.id() && other.login() == updated.login()) {
+        if (other.id() != employee.id() && other.login() == employee.login()) {
             throw InvalidInputException("login", "сотрудник с таким логином уже существует");
         }
     }
     const bool loses_admin = current.role() == EmployeeRole::Administrator &&
-                             updated.role() != EmployeeRole::Administrator;
+                             employee.role() != EmployeeRole::Administrator;
     if (loses_admin && administrators_count() <= kMinAdministrators) {
         throw InvalidInputException("role", "нельзя лишить прав последнего администратора");
     }
     Repository<Employee> copy = employees_;
-    replace_by_id(copy, updated);
+    replace_by_id(copy, employee);
     employees_.swap(copy);
     publish();
 }
@@ -523,10 +513,13 @@ void DryCleaningShop::update_machine(const Machine& machine, Id acting_employee)
     publish();
 }
 
+bool DryCleaningShop::can_service_machine(Id machine_id, TimePoint now) const {
+    return machines_.get(machine_id).is_free_at(now) && !has_scheduled_batch(machine_id);
+}
+
 void DryCleaningShop::service_machine(Id machine_id, Id acting_employee, TimePoint now) {
     begin_mutation(acting_employee, Permission::ManageStaff);
-    const Machine& machine = machines_.get(machine_id);
-    if (has_scheduled_batch(machine_id) || !machine.is_free_at(now)) {
+    if (!can_service_machine(machine_id, now)) {
         throw InvalidInputException("maintenance", "сначала завершите все партии машины");
     }
     Repository<Machine> copy = machines_;
@@ -567,14 +560,16 @@ void DryCleaningShop::update_client(const Client& client, Id acting_employee) {
     publish();
 }
 
+bool DryCleaningShop::can_remove_client(Id client_id) const {
+    return clients_.get(client_id).orders_count() == 0 &&
+           std::none_of(orders_.begin(), orders_.end(), [client_id](const Order& order) {
+               return order.client_id() == client_id;
+           });
+}
+
 void DryCleaningShop::remove_client(Id client_id, Id acting_employee) {
     begin_mutation(acting_employee, Permission::ManageClients);
-    const Client& client = clients_.get(client_id);
-    const bool has_orders = client.orders_count() > 0 || std::any_of(orders_.begin(), orders_.end(),
-                                                                       [client_id](const Order& order) {
-                                                                           return order.client_id() == client_id;
-                                                                       });
-    if (has_orders) {
+    if (!can_remove_client(client_id)) {
         throw InvalidInputException("client", "нельзя удалить клиента, у которого есть заказы");
     }
     Repository<Client> copy = clients_;
@@ -594,17 +589,25 @@ bool DryCleaningShop::has_employee_records(Id employee_id) const {
            });
 }
 
-void DryCleaningShop::remove_employee(Id employee_id, Id acting_employee) {
-    begin_mutation(acting_employee, Permission::ManageStaff);
+std::string DryCleaningShop::employee_removal_block(Id employee_id, Id acting_employee) const {
     const Employee& target = employees_.get(employee_id);
     if (employee_id == acting_employee) {
-        throw InvalidInputException("employee", "нельзя удалить самого себя");
+        return "Нельзя удалить свою учётную запись.";
     }
     if (target.role() == EmployeeRole::Administrator && administrators_count() <= kMinAdministrators) {
-        throw InvalidInputException("employee", "нельзя удалить последнего администратора");
+        return "Назначьте другого администратора, чтобы удалить эту учётную запись.";
     }
     if (has_employee_records(employee_id)) {
-        throw InvalidInputException("employee", "нельзя удалить сотрудника, который принимал заказы или создавал партии");
+        return "Нельзя удалить сотрудника, указанного в заказе или партии.";
+    }
+    return {};
+}
+
+void DryCleaningShop::remove_employee(Id employee_id, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::ManageStaff);
+    const std::string reason = employee_removal_block(employee_id, acting_employee);
+    if (!reason.empty()) {
+        throw InvalidInputException("employee", reason);
     }
     Repository<Employee> copy = employees_;
     copy.remove(employee_id);
@@ -612,12 +615,15 @@ void DryCleaningShop::remove_employee(Id employee_id, Id acting_employee) {
     publish();
 }
 
-void DryCleaningShop::remove_machine(Id machine_id, Id acting_employee) {
-    begin_mutation(acting_employee, Permission::ManageStaff);
-    const bool has_batches = std::any_of(batches_.begin(), batches_.end(), [machine_id](const Batch& batch) {
+bool DryCleaningShop::can_remove_machine(Id machine_id) const {
+    return std::none_of(batches_.begin(), batches_.end(), [machine_id](const Batch& batch) {
         return batch.machine_id() == machine_id;
     });
-    if (has_batches) {
+}
+
+void DryCleaningShop::remove_machine(Id machine_id, Id acting_employee) {
+    begin_mutation(acting_employee, Permission::ManageStaff);
+    if (!can_remove_machine(machine_id)) {
         throw InvalidInputException("machine", "нельзя удалить машину, на которой запланированы или выполнялись партии");
     }
     Repository<Machine> copy = machines_;
@@ -634,12 +640,18 @@ void DryCleaningShop::remove_material(Id material_id, Id acting_employee) {
     publish();
 }
 
+bool DryCleaningShop::is_order_editable(Id order_id) const {
+    const Order& order = orders_.get(order_id);
+    return order.status() == OrderStatus::Accepted &&
+           std::none_of(order.item_ids().begin(), order.item_ids().end(), [this](Id item_id) {
+               return items_.get(item_id).is_batched();
+           });
+}
+
 void DryCleaningShop::remove_order(Id order_id, Id acting_employee) {
     begin_mutation(acting_employee, Permission::AcceptOrders);
     const Order& order = orders_.get(order_id);
-    const bool in_work = std::any_of(order.item_ids().begin(), order.item_ids().end(),
-                                     [this](Id item_id) { return items_.get(item_id).is_batched(); });
-    if (order.status() != OrderStatus::Accepted || in_work) {
+    if (!is_order_editable(order_id)) {
         throw InvalidInputException("order", "удалить можно только принятый заказ, который ещё не передан в обработку");
     }
     Repository<Item> items = items_;
@@ -813,10 +825,7 @@ void DryCleaningShop::update_item(const Item& item, Id acting_employee) {
     if (item.order_id() != current.order_id() || item.tag() != current.tag() || item.batch_id() != current.batch_id()) {
         throw InvalidInputException("item", "служебные поля изделия менять нельзя");
     }
-    const bool any_batched = std::any_of(order.item_ids().begin(), order.item_ids().end(), [this](Id id) {
-        return items_.get(id).is_batched();
-    });
-    if (order.status() != OrderStatus::Accepted || any_batched) {
+    if (!is_order_editable(order.id())) {
         throw InvalidInputException("item", "изделие можно менять, только пока заказ не поставлен в обработку");
     }
 
@@ -911,20 +920,21 @@ std::vector<Order> DryCleaningShop::find_overdue_orders(TimePoint now) const {
     return orders_.find_if([now](const Order& order) { return order.is_overdue(now); });
 }
 
-bool DryCleaningShop::all_batches_completed(const Order& order, TimePoint& latest_completion) const {
-    latest_completion = TimePoint{};
+std::optional<TimePoint> DryCleaningShop::order_processing_completed_at(Id order_id) const {
+    const Order& order = orders_.get(order_id);
+    TimePoint latest_completion{};
     for (const Id item_id : order.item_ids()) {
         const Item* item = items_.find_by_id(item_id);
         if (item == nullptr || !item->is_batched() || !item->services_completed()) {
-            return false;
+            return std::nullopt;
         }
         const Batch* batch = batches_.find_by_id(item->batch_id());
         if (batch == nullptr || batch->status() != BatchStatus::Completed || !batch->completed_at()) {
-            return false;
+            return std::nullopt;
         }
         latest_completion = std::max(latest_completion, *batch->completed_at());
     }
-    return true;
+    return latest_completion;
 }
 
 void DryCleaningShop::change_order_status(Id order_id, OrderStatus status, Id acting_employee, TimePoint now) {
@@ -933,11 +943,11 @@ void DryCleaningShop::change_order_status(Id order_id, OrderStatus status, Id ac
     if (status != OrderStatus::Ready || order.status() != OrderStatus::InProgress) {
         throw InvalidInputException("status", "вручную можно перевести заказ только из «В обработке» в «Готов»");
     }
-    TimePoint latest;
-    if (!all_batches_completed(order, latest)) {
+    const auto latest = order_processing_completed_at(order_id);
+    if (!latest) {
         throw InvalidInputException("status", "не все партии заказа завершены");
     }
-    if (now < latest) {
+    if (now < *latest) {
         throw InvalidInputException("now", "время готовности не может быть раньше завершения партий");
     }
     Order changed = order;
@@ -1362,14 +1372,11 @@ void DryCleaningShop::load_all() {
     Repository<Employee> employees;
     Repository<Machine> machines;
     Revision stored_revision = 0;
-    bool fresh = false;
 
     if (!current) {
         if (storage_->has_data()) {
             throw FileFormatException("CURRENT", kWholeFile, "указатель CURRENT отсутствует, но в каталоге есть данные");
         }
-        employees.add(Employee(kInitialAdminName, kInitialAdminLogin, EmployeeRole::Administrator));
-        fresh = true;
     } else {
         const std::filesystem::path directory = storage_->generation_path(*current);
         const auto counts = read_manifest(directory / kManifestName, stored_revision);
@@ -1380,9 +1387,8 @@ void DryCleaningShop::load_all() {
         load_file(materials, directory, counts);
         load_file(employees, directory, counts);
         load_file(machines, directory, counts);
+        check_references(clients, items, orders, batches, employees, machines);
     }
-
-    check_references(clients, items, orders, batches, employees, machines);
 
     const Revision base = std::max(revision_, stored_revision);
     if (loaded_ && base == std::numeric_limits<Revision>::max()) {
@@ -1396,6 +1402,5 @@ void DryCleaningShop::load_all() {
     employees_.swap(employees);
     machines_.swap(machines);
     revision_ = loaded_ ? base + 1 : base;
-    dirty_ = fresh;
     loaded_ = true;
 }

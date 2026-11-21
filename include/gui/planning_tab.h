@@ -7,7 +7,7 @@
 
 class QLabel;
 class QPushButton;
-class QTableWidget;
+class TableWidget;
 
 class PlanningTab : public QWidget {
     Q_OBJECT
@@ -41,8 +41,8 @@ private:
     QPushButton* validate_button_;
     QPushButton* confirm_button_;
     QLabel* summary_label_;
-    QTableWidget* batches_table_;
-    QTableWidget* unplaced_table_;
-    QTableWidget* conflicts_table_;
-    QTableWidget* forecasts_table_;
+    TableWidget* batches_table_;
+    TableWidget* unplaced_table_;
+    TableWidget* conflicts_table_;
+    TableWidget* forecasts_table_;
 };

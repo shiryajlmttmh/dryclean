@@ -1,10 +1,9 @@
 #include "gui/batches_tab.h"
 
 #include <QTabBar>
-#include <QHBoxLayout>
-#include <QPushButton>
+#include <QToolButton>
+#include <cmath>
 #include <QSignalBlocker>
-#include <QTableWidget>
 #include <QVBoxLayout>
 #include <array>
 #include <algorithm>
@@ -51,7 +50,16 @@ bool matches_filter(const Batch& batch, int filter) {
 }
 
 constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{
-    "№", "Машина", "Услуга", "Изделия", "Масса, кг", "Загрузка", "Начало", "До конца обработки", "Статус", "Завершена"};
+    "№", "Машина", "Услуга", "Изделия", "Масса", "Загрузка", "Начало", "Конец", "Статус", "Завершена"};
+
+QString short_time(TimePoint time) {
+    return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("dd.MM HH:mm"));
+}
+
+void set_batch_time(TableWidget* table, int row, int column, std::optional<TimePoint> time, const QString& label) {
+    set_sortable_cell(table, row, column, label, time_sort_value(time));
+    table->item(row, column)->setToolTip(qt_convert::format_time(time));
+}
 
 }
 
@@ -64,22 +72,14 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     filter_tabs_->setTabData(filter_tabs_->addTab(QStringLiteral("Завершённые")),
                              static_cast<int>(BatchStatus::Completed));
     filter_tabs_->setTabData(filter_tabs_->addTab(QStringLiteral("Все партии")), kAllBatches);
-    complete_button_ = new QPushButton(QStringLiteral("Завершить партию"), this);
-    table_ = new QTableWidget(this);
-    configure_table(table_, make_headers(kBatchHeaders));
-
-    auto* toolbar = new QHBoxLayout;
-    toolbar->addStretch(kStretch);
-    toolbar->addWidget(complete_button_);
-
+    table_ = new TableWidget(make_headers(kBatchHeaders), this, BatchItems, true);
+    table_->add_stretch_column(BatchMachine);
+    table_->add_stretch_column(BatchService);
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(filter_tabs_);
-    layout->addLayout(toolbar);
     layout->addWidget(table_);
 
     connect(filter_tabs_, &QTabBar::currentChanged, this, &BatchesTab::refresh);
-    connect(complete_button_, &QPushButton::clicked, this, &BatchesTab::complete);
-    connect(table_, &QTableWidget::itemSelectionChanged, this, &BatchesTab::update_buttons);
     refresh();
 }
 
@@ -96,49 +96,58 @@ void BatchesTab::refresh() {
         return left->planned_start_at() < right->planned_start_at();
     });
     const QSignalBlocker blocker(table_);
-    table_->setCurrentCell(-1, -1);
-    table_->setRowCount(static_cast<int>(shown.size()));
+    table_->set_empty_text(shop_.batches().empty()
+        ? QStringLiteral("Партий пока нет. Они появятся после подтверждения плана.")
+        : QStringLiteral("Для выбранного фильтра партий нет."));
+    const bool has_scheduled = std::any_of(shown.begin(), shown.end(), [](const Batch* batch) {
+        return batch->status() == BatchStatus::Scheduled;
+    });
+    table_->setColumnHidden(table_->actions_column(),
+                            !has_scheduled || !has_permission(shop_, employee_id_, Permission::ChangeStatus));
+    table_->reset_rows(static_cast<int>(shown.size()));
     const TimePoint now = qt_convert::now();
     int row = 0;
     for (const Batch* batch : shown) {
-        fill_row(row, *batch, now);
-        if (selected == batch->id()) {
-            table_->selectRow(row);
-        }
-        ++row;
+        fill_row(row++, *batch, now);
     }
-    update_buttons();
+    table_->finish_rows();
+    restore_selected_id(table_, BatchId, selected);
 }
 
 void BatchesTab::fill_row(int row, const Batch& batch, TimePoint now) {
-    set_cell(table_, row, BatchId, QString::number(batch.id()), true);
+    set_cell(table_, row, BatchId, batch.id());
     set_cell(table_, row, BatchMachine, machine_name(shop_, batch.machine_id()));
     set_cell(table_, row, BatchService, qt_convert::text(display_name(batch.service_type())));
     set_cell(table_, row, BatchItems, item_tags(shop_, batch.item_ids()));
-    set_cell(table_, row, BatchWeight, QString::number(batch.total_weight_kg(), 'f', kWeightDecimals), true);
-    set_cell(table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio())), true);
-    set_cell(table_, row, BatchStart, qt_convert::format_time(batch.planned_start_at()));
-    const QString remaining = batch.status() == BatchStatus::Completed
-        ? QStringLiteral("Завершена, %1").arg(qt_convert::format_time(batch.planned_ready_at()))
-        : qt_convert::format_time_remaining(batch.planned_ready_at(), now);
-    set_cell(table_, row, BatchReady, remaining);
+    set_sortable_cell(table_, row, BatchWeight,
+                      QStringLiteral("%1 кг").arg(batch.total_weight_kg(), 0, 'f', kWeightDecimals),
+                      batch.total_weight_kg(), true);
+    set_sortable_cell(table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio())),
+                      batch.fill_ratio(), true);
+    set_batch_time(table_, row, BatchStart, batch.planned_start_at(), short_time(batch.planned_start_at()));
+    const qint64 hours_left = static_cast<qint64>(std::ceil(hours_between(batch.planned_ready_at(), now)));
+    const QString end = batch.status() == BatchStatus::Completed || now >= batch.planned_ready_at()
+        ? short_time(batch.planned_ready_at())
+        : QStringLiteral("Через %1 ч").arg(hours_left);
+    set_batch_time(table_, row, BatchReady, batch.planned_ready_at(), end);
     set_cell(table_, row, BatchStatusName, status_text(batch, now));
-    set_cell(table_, row, BatchCompleted, qt_convert::format_time(batch.completed_at()));
-}
-
-void BatchesTab::update_buttons() {
-    const std::optional<Id> id = selected_id(table_, BatchId);
-    const Batch* batch = id ? shop_.batches().find_by_id(*id) : nullptr;
-    complete_button_->setEnabled(batch != nullptr && batch->status() == BatchStatus::Scheduled &&
-                                 has_permission(shop_, employee_id_, Permission::ChangeStatus));
-}
-
-void BatchesTab::complete() {
-    const std::optional<Id> id = selected_id(table_, BatchId);
-    if (!id) {
-        return;
+    const auto completed_at = batch.completed_at();
+    set_batch_time(table_, row, BatchCompleted, completed_at,
+                   completed_at ? short_time(*completed_at) : QStringLiteral("—"));
+    if (!table_->isColumnHidden(table_->actions_column()) && batch.status() == BatchStatus::Scheduled) {
+        const Id id = batch.id();
+        const QString unavailable = now < batch.planned_ready_at()
+            ? QStringLiteral("Завершить партию можно после %1.").arg(qt_convert::format_time(batch.planned_ready_at()))
+            : QString();
+        auto* action = add_row_action(make_row_actions(table_, row, id), QStringLiteral("Завершить"),
+                                      [this, id] { complete(id); }, unavailable);
+        action->setAccessibleName(QStringLiteral("Завершить партию №%1").arg(id));
+        if (unavailable.isEmpty()) action->setToolTip(action->accessibleName());
     }
-    if (run_guarded(this, [&] { shop_.complete_batch(*id, employee_id_, qt_convert::now()); })) {
+}
+
+void BatchesTab::complete(Id id) {
+    if (run_guarded(this, [&] { shop_.complete_batch(id, employee_id_, qt_convert::now()); })) {
         emit changed();
     }
 }

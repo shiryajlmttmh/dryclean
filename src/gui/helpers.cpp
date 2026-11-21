@@ -19,7 +19,6 @@ namespace {
 constexpr int kNoRow = -1;
 constexpr const char* kUnknown = "?";
 constexpr const char* kTagSeparator = ", ";
-constexpr int kPositionColumn = 0;
 constexpr int kPositionRole = Qt::UserRole;
 
 std::optional<std::size_t> stored_position(const QVariant& value, std::size_t count) {
@@ -75,15 +74,6 @@ void restore_selected_id(QTableWidget* table, int id_column, std::optional<Id> i
             return;
         }
     }
-}
-
-void set_row_position(QTableWidget* table, int row, std::size_t position) {
-    table->item(row, kPositionColumn)->setData(kPositionRole, static_cast<qulonglong>(position));
-}
-
-std::optional<std::size_t> selected_position(const QTableWidget* table, std::size_t count) {
-    const QTableWidgetItem* item = table->item(table->currentRow(), kPositionColumn);
-    return item == nullptr ? std::nullopt : stored_position(item->data(kPositionRole), count);
 }
 
 void add_positioned_item(QListWidget* list, const QString& text, std::size_t position) {

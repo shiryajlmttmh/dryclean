@@ -54,19 +54,23 @@ public:
 
     const Employee& authenticate(const std::string& login, const std::string& password) const;
     bool needs_password_setup() const noexcept;
-    void initialize_admin_password(const std::string& login, const std::string& password);
+    Id initialize_admin_password(const std::string& password);
     void require_permission(Id employee_id, Permission permission) const;
 
     Id add_employee(Employee employee, Id acting_employee);
     void update_employee(const Employee& employee, Id acting_employee);
+    std::string employee_removal_block(Id employee_id, Id acting_employee) const;
     void remove_employee(Id employee_id, Id acting_employee);
     Id add_machine(Machine machine, Id acting_employee);
     void update_machine(const Machine& machine, Id acting_employee);
+    bool can_service_machine(Id machine_id, TimePoint now) const;
     void service_machine(Id machine_id, Id acting_employee, TimePoint now);
+    bool can_remove_machine(Id machine_id) const;
     void remove_machine(Id machine_id, Id acting_employee);
 
     Id register_client(std::string name, std::string phone, double discount, Id acting_employee);
     void update_client(const Client& client, Id acting_employee);
+    bool can_remove_client(Id client_id) const;
     void remove_client(Id client_id, Id acting_employee);
     const Client* find_client_by_phone(const std::string& phone) const;
     std::vector<Client> search_clients(const std::string& query) const;
@@ -80,7 +84,9 @@ public:
     std::optional<TimePoint> estimate_ready_time(Id order_id) const;
     std::vector<Order> orders_by_status(OrderStatus status) const;
     std::vector<Order> find_overdue_orders(TimePoint now) const;
+    bool is_order_editable(Id order_id) const;
     void remove_order(Id order_id, Id acting_employee);
+    std::optional<TimePoint> order_processing_completed_at(Id order_id) const;
     void change_order_status(Id order_id, OrderStatus status, Id acting_employee, TimePoint now);
     void issue_order(Id order_id, Id acting_employee, TimePoint now);
 
@@ -135,7 +141,6 @@ private:
                      const Repository<Machine>& machines, const Repository<Employee>& employees) const;
     void validate_references() const;
     void ensure_storage();
-    bool all_batches_completed(const Order& order, TimePoint& latest_completion) const;
 
     Repository<Client> clients_;
     Repository<Item> items_;

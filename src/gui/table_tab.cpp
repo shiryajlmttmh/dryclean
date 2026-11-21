@@ -4,72 +4,62 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QTableWidget>
 #include <QVBoxLayout>
 
 #include "gui/helpers.h"
 #include "gui/table_utils.h"
 
 TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-                   QWidget* parent)
-    : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission) {
-    toolbar_ = new QHBoxLayout;
-    toolbar_->addStretch(kStretch);
-    add_button_ = new QPushButton(QStringLiteral("Добавить"), this);
-    edit_button_ = new QPushButton(QStringLiteral("Изменить"), this);
-    remove_button_ = new QPushButton(QStringLiteral("Удалить"), this);
-    toolbar_->addWidget(add_button_);
-    toolbar_->addWidget(edit_button_);
-    toolbar_->addWidget(remove_button_);
-
-    table_ = new QTableWidget(this);
-    configure_table(table_, headers);
+                   QWidget* parent, int stretch_column, bool has_view_actions)
+    : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission),
+      has_view_actions_(has_view_actions) {
+    add_button_ = new QPushButton(QStringLiteral("&Добавить"), this);
+    table_ = new TableWidget(headers, this, stretch_column, true);
 
     auto* layout = new QVBoxLayout(this);
-    layout->addLayout(toolbar_);
+    layout->addWidget(add_button_, 0, Qt::AlignLeft);
     layout->addWidget(table_);
 
     connect(add_button_, &QPushButton::clicked, this, &TableTab::add_record);
-    connect(edit_button_, &QPushButton::clicked, this, &TableTab::edit_selected);
-    connect(remove_button_, &QPushButton::clicked, this, &TableTab::remove_selected);
-    connect(table_, &QTableWidget::cellDoubleClicked, this, &TableTab::edit_selected);
-    connect(table_, &QTableWidget::itemSelectionChanged, this, &TableTab::update_buttons);
 }
 
 void TableTab::refresh() {
-    const auto id = selected();
+    const bool allowed = is_allowed();
+    const bool show_actions = allowed || has_view_actions_;
+    add_button_->setVisible(allowed);
+    table_->setColumnHidden(table_->actions_column(), !show_actions);
+    const auto selected = selected_id(table_, 0);
     const QSignalBlocker blocker(table_);
+    table_->set_empty_text(allowed ? QStringLiteral("Нет записей. Нажмите «Добавить» для создания записи.")
+                                   : QStringLiteral("Нет записей."));
     fill(table_);
-    restore_selected_id(table_, kIdColumn, id);
-    update_buttons();
+    for (int row = 0; show_actions && row < table_->rowCount(); ++row) {
+        const Id id = table_->item(row, 0)->text().toUInt();
+        auto* actions = make_row_actions(table_, row, id);
+        if (allowed) {
+            add_edit_action(actions, QStringLiteral("Изменить запись №%1").arg(id),
+                            [this, id] { if (is_allowed()) edit_record(id); });
+            add_remove_action(actions, QStringLiteral("Удалить запись №%1").arg(id),
+                              [this, id] { confirm_removal(id); }, removal_block(id));
+        }
+        add_extra_actions(actions, id);
+    }
+    table_->finish_rows();
+    restore_selected_id(table_, 0, selected);
 }
 
 bool TableTab::is_allowed() const { return has_permission(shop_, employee_id_, permission_); }
 
-std::optional<Id> TableTab::selected() const { return selected_id(table_, kIdColumn); }
+void TableTab::add_extra_actions(QHBoxLayout*, Id) {}
 
-void TableTab::update_buttons() {
-    add_button_->setEnabled(is_allowed());
-    edit_button_->setEnabled(is_allowed() && selected().has_value());
-    remove_button_->setEnabled(is_allowed() && selected().has_value());
-}
+QString TableTab::removal_block(Id) const { return {}; }
 
-void TableTab::edit_selected() {
-    const std::optional<Id> id = selected();
-    if (id && is_allowed()) {
-        edit_record(*id);
-    }
-}
-
-void TableTab::remove_selected() {
-    const std::optional<Id> id = selected();
-    if (!id || !is_allowed()) {
+void TableTab::confirm_removal(Id id) {
+    if (!is_allowed() ||
+        !confirm(this, QStringLiteral("Удаление"), QStringLiteral("Удалить запись №%1?").arg(id))) {
         return;
     }
-    if (!confirm(this, QStringLiteral("Удаление"), QStringLiteral("Удалить выбранную запись?"))) {
-        return;
-    }
-    if (run_guarded(this, [this, id] { remove_record(*id); })) {
+    if (run_guarded(this, [this, id] { remove_record(id); })) {
         emit changed();
     }
 }

@@ -1,6 +1,5 @@
 #include "gui/machines_tab.h"
 
-#include <QTableWidget>
 #include <QDateTimeEdit>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -11,6 +10,7 @@
 #include <QGraphicsView>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -41,8 +41,8 @@ enum HistoryColumn { HistoryBatch, HistoryStart, HistoryReady, HistoryStatus, Hi
 
 enum MachineColumn { MachineId, MachineName, MachineType, MachineCapacity, MachineFreeAt, MachineMaintenance, MachineColumnCount };
 
-constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Название", "Тип", "Вместимость, кг",
-                                                                      "Доступность", "До ТО, ч (с учётом плана)"};
+constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Название", "Тип", "Объём, кг",
+                                                                      "Доступность", "До ТО, ч"};
 constexpr std::array<const char*, HistoryColumnCount> kHistoryHeaders{
     "Партия", "Начало", "Конец обработки", "Статус", "Подтверждение завершения"};
 
@@ -79,38 +79,40 @@ void draw_timeline(QGraphicsScene& scene, const std::vector<const Batch*>& histo
 }
 
 MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kMachineHeaders), parent) {
-    history_button_ = new QPushButton(QStringLiteral("История занятости"), this);
-    service_button_ = new QPushButton(QStringLiteral("Выполнить ТО"), this);
-    toolbar_->addWidget(history_button_);
-    toolbar_->addWidget(service_button_);
-    connect(history_button_, &QPushButton::clicked, this, &MachinesTab::show_history);
-    connect(service_button_, &QPushButton::clicked, this, &MachinesTab::service_selected);
+    : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kMachineHeaders),
+               parent, MachineName, true) {}
+
+void MachinesTab::add_extra_actions(QHBoxLayout* actions, Id id) {
+    add_row_action(actions, QStringLiteral("Занятость"), [this, id] { show_history(id); });
+    if (is_allowed()) {
+        auto* menu = add_more_actions(actions, QStringLiteral("Обслуживание машины №%1").arg(id));
+        auto* service = menu->addAction(QStringLiteral("Выполнить ТО"), this, [this, id] { service_machine(id); });
+        if (!shop_.can_service_machine(id, qt_convert::now())) {
+            service->setEnabled(false);
+            service->setToolTip(QStringLiteral("Сначала завершите все партии машины."));
+            menu->setToolTipsVisible(true);
+        }
+    }
 }
 
-void MachinesTab::update_buttons() {
-    TableTab::update_buttons();
-    history_button_->setEnabled(selected().has_value());
-    service_button_->setEnabled(is_allowed() && selected().has_value());
+QString MachinesTab::removal_block(Id id) const {
+    return shop_.can_remove_machine(id) ? QString() : QStringLiteral("У машины есть партии.");
 }
 
-void MachinesTab::service_selected() {
-    const auto id = selected();
-    if (!id || !is_allowed()) return;
+void MachinesTab::service_machine(Id id) {
+    if (!is_allowed()) return;
     if (!confirm(this, QStringLiteral("Техобслуживание"),
                  QStringLiteral("Подтвердить выполненное ТО и обнулить счётчик часов?"))) return;
-    if (run_guarded(this, [this, id] { shop_.service_machine(*id, employee_id_, qt_convert::now()); })) {
+    if (run_guarded(this, [this, id] { shop_.service_machine(id, employee_id_, qt_convert::now()); })) {
         emit changed();
     }
 }
 
-void MachinesTab::show_history() {
-    const auto id = selected();
-    if (!id) return;
-    const Machine& machine = shop_.machines().get(*id);
+void MachinesTab::show_history(Id id) {
+    const Machine& machine = shop_.machines().get(id);
     std::vector<const Batch*> history;
     for (const Batch& batch : shop_.batches()) {
-        if (batch.machine_id() == *id) history.push_back(&batch);
+        if (batch.machine_id() == id) history.push_back(&batch);
     }
     std::sort(history.begin(), history.end(), [](const Batch* left, const Batch* right) {
         return left->planned_start_at() < right->planned_start_at();
@@ -142,16 +144,16 @@ void MachinesTab::show_history() {
         date_edit->setDateTime(QDateTime::currentDateTime());
     });
     update_timeline(date_edit->dateTime());
-    auto* table = new QTableWidget(&dialog);
-    configure_table(table, make_headers(kHistoryHeaders));
-    table->setRowCount(static_cast<int>(history.size()));
+    auto* table = new TableWidget(make_headers(kHistoryHeaders), &dialog, HistoryStatus);
+    table->set_empty_text(QStringLiteral("У этой машины пока нет партий."));
+    table->reset_rows(static_cast<int>(history.size()));
     for (int row = 0; row < static_cast<int>(history.size()); ++row) {
         const Batch& batch = *history[row];
-        set_cell(table, row, HistoryBatch, QString::number(batch.id()), true);
-        set_cell(table, row, HistoryStart, qt_convert::format_time(batch.planned_start_at()));
-        set_cell(table, row, HistoryReady, qt_convert::format_time(batch.planned_ready_at()));
+        set_cell(table, row, HistoryBatch, batch.id());
+        set_time_cell(table, row, HistoryStart, batch.planned_start_at());
+        set_time_cell(table, row, HistoryReady, batch.planned_ready_at());
         set_cell(table, row, HistoryStatus, qt_convert::text(display_name(batch.status())));
-        set_cell(table, row, HistoryCompleted, qt_convert::format_time(batch.completed_at()));
+        set_time_cell(table, row, HistoryCompleted, batch.completed_at());
     }
     layout->addWidget(table);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
@@ -161,8 +163,8 @@ void MachinesTab::show_history() {
     dialog.exec();
 }
 
-void MachinesTab::fill(QTableWidget* table) {
-    table->setRowCount(static_cast<int>(shop_.machines().size()));
+void MachinesTab::fill(TableWidget* table) {
+    table->reset_rows(static_cast<int>(shop_.machines().size()));
     const TimePoint now = qt_convert::now();
     int row = 0;
     std::vector<Machine> machines(shop_.machines().begin(), shop_.machines().end());
@@ -171,14 +173,20 @@ void MachinesTab::fill(QTableWidget* table) {
         return QString::localeAwareCompare(qt_convert::text(left.name()), qt_convert::text(right.name())) < 0;
     });
     for (const Machine& machine : machines) {
-        set_cell(table, row, MachineId, QString::number(machine.id()), true);
+        set_cell(table, row, MachineId, machine.id());
         set_cell(table, row, MachineName, qt_convert::text(machine.name()));
         set_cell(table, row, MachineType, qt_convert::text(display_name(machine.type())));
-        set_cell(table, row, MachineCapacity, QString::number(machine.capacity_kg(), 'f', kCapacityDecimals), true);
-        set_cell(table, row, MachineFreeAt,
-                 machine.is_free_at(now) ? QStringLiteral("свободна") : qt_convert::format_time(machine.free_at()));
-        set_cell(table, row, MachineMaintenance,
-                 QString::number(machine.maintenance_remaining(), 'f', kMaintenanceDecimals));
+        set_sortable_cell(table, row, MachineCapacity, QString::number(machine.capacity_kg(), 'f', kCapacityDecimals),
+                          machine.capacity_kg(), true);
+        const bool is_free = machine.is_free_at(now);
+        set_sortable_cell(table, row, MachineFreeAt,
+                          is_free ? QStringLiteral("свободна") : qt_convert::format_time(machine.free_at()),
+                          time_sort_value(is_free ? std::nullopt : std::optional(machine.free_at())));
+        set_sortable_cell(table, row, MachineMaintenance,
+                          QString::number(machine.maintenance_remaining(), 'f', kMaintenanceDecimals),
+                          machine.maintenance_remaining());
+        table->item(row, MachineMaintenance)->setToolTip(QStringLiteral("%1 ч с учётом плана")
+                                                           .arg(table->item(row, MachineMaintenance)->text()));
         ++row;
     }
 }
