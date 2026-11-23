@@ -195,6 +195,10 @@ void TableWidget::set_empty_text(const QString& text) {
     viewport()->update();
 }
 
+void TableWidget::fit_full_column_contents(int column) {
+    full_content_columns_.insert(column);
+}
+
 int TableWidget::actions_column() const noexcept { return actions_column_; }
 
 void TableWidget::reset_sort() {
@@ -222,7 +226,8 @@ void TableWidget::cycle_sort(int column) {
 
 int TableWidget::sizeHintForColumn(int column) const {
     if (column != actions_column_) {
-        return std::min(QTableWidget::sizeHintForColumn(column), kMaxDataCellWidth);
+        const int width = QTableWidget::sizeHintForColumn(column);
+        return full_content_columns_.contains(column) ? width : std::min(width, kMaxDataCellWidth);
     }
 
     int width = 0;

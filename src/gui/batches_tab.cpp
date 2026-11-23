@@ -6,8 +6,9 @@
 #include <QTabBar>
 #include <QToolButton>
 #include <QVBoxLayout>
-#include <array>
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <vector>
 
 #include "display.h"
@@ -43,16 +44,35 @@ bool matches_filter(BatchStatus status, int filter, int stage) {
 constexpr std::array<const char*, BatchColumnCount> kBatchHeaders{
     "№", "Машина", "Услуга", "Изделия", "Масса", "Загрузка", "Начало", "Окончание", "Статус"};
 
-QString short_time(TimePoint time) {
-    return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("dd.MM HH:mm"));
+QDateTime local_date_time(TimePoint time) {
+    return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time));
 }
 
-void set_batch_time(TableWidget* table, int row, int column, TimePoint time, const QString& kind,
-                    TimePoint planned, bool lower_bound) {
-    const QString prefix = lower_bound ? QStringLiteral("Не раньше %1") : QStringLiteral("%1");
-    set_sortable_cell(table, row, column, prefix.arg(short_time(time)), time_sort_value(time));
+QString format_batch_time(TimePoint time, int current_year) {
+    const auto local = local_date_time(time);
+    return local.toString(local.date().year() == current_year ? QStringLiteral("dd.MM HH:mm")
+                                                              : QStringLiteral("dd.MM.yyyy HH:mm"));
+}
+
+QString format_countdown(TimePoint end, TimePoint now) {
+    using namespace std::chrono;
+    const auto total_minutes = duration_cast<minutes>(end - now);
+    if (total_minutes == minutes::zero()) return QStringLiteral("Осталось меньше минуты");
+    const auto whole_hours = duration_cast<hours>(total_minutes);
+    const auto remaining_minutes = total_minutes - whole_hours;
+    if (whole_hours == hours::zero()) return QStringLiteral("Осталось %1 мин").arg(remaining_minutes.count());
+    if (remaining_minutes == minutes::zero()) return QStringLiteral("Осталось %1 ч").arg(whole_hours.count());
+    return QStringLiteral("Осталось %1 ч %2 мин").arg(whole_hours.count()).arg(remaining_minutes.count());
+}
+
+void set_batch_time(TableWidget* table, int row, int column, TimePoint time, const QString& kind, TimePoint planned,
+                    int current_year, bool lower_bound, const QString& countdown = {}) {
+    const auto date = format_batch_time(time, current_year);
+    const auto moment = lower_bound ? QStringLiteral("Не раньше %1").arg(date) : date;
+    const auto displayed = countdown.isEmpty() ? moment : QStringLiteral("%1 · %2").arg(countdown, moment);
+    set_sortable_cell(table, row, column, displayed, time_sort_value(time));
     table->item(row, column)->setToolTip(QStringLiteral("%1: %2\nПо плану: %3")
-        .arg(kind, prefix.arg(qt_convert::format_time(time)), qt_convert::format_time(planned)));
+        .arg(kind, moment, format_batch_time(planned, current_year)));
 }
 
 }
@@ -73,6 +93,8 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast
     read_only_hint_ = new QLabel(QStringLiteral("Для запуска и завершения партий нужны права оператора."), this);
     read_only_hint_->setWordWrap(true);
     table_ = new TableWidget(make_headers(kBatchHeaders), this, true);
+    table_->fit_full_column_contents(BatchStart);
+    table_->fit_full_column_contents(BatchEnd);
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(filter_tabs_);
     layout->addWidget(stage_filter_, 0, Qt::AlignLeft);
@@ -112,15 +134,16 @@ void BatchesTab::refresh() {
     table_->setColumnHidden(table_->actions_column(), !has_unfinished || !may_process);
     read_only_hint_->setVisible(!may_process && filter != Completed);
     table_->reset_rows(static_cast<int>(shown.size()));
+    const int current_year = local_date_time(forecast_.now).date().year();
     int row = 0;
     for (const Batch* batch : shown) {
-        fill_row(row++, *batch);
+        fill_row(row++, *batch, current_year);
     }
     table_->finish_rows();
     restore_selected_id(table_, BatchId, selected);
 }
 
-void BatchesTab::fill_row(int row, const Batch& batch) {
+void BatchesTab::fill_row(int row, const Batch& batch, int current_year) {
     set_cell(table_, row, BatchId, batch.id());
     set_cell(table_, row, BatchMachine, machine_name(shop_, batch.machine_id()));
     set_cell(table_, row, BatchService, qt_convert::text(display_name(batch.service_type())));
@@ -131,18 +154,19 @@ void BatchesTab::fill_row(int row, const Batch& batch) {
     set_sortable_cell(table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio())),
                       batch.fill_ratio(), true);
     const auto& projection = forecast_.batches.at(batch.id());
+    const auto status = projection.status;
     set_batch_time(table_, row, BatchStart, projection.start, batch.started_at()
         ? QStringLiteral("Фактическое начало") : QStringLiteral("Прогноз начала"),
-        batch.planned_start_at(), projection.lower_bound);
+        batch.planned_start_at(), current_year, projection.lower_bound);
+    const auto countdown = status == BatchStatus::InProgress ? format_countdown(projection.end, forecast_.now) : QString();
     set_batch_time(table_, row, BatchEnd, projection.end, batch.completed_at()
         ? QStringLiteral("Подтверждение завершения") : QStringLiteral("Расчётный конец цикла"),
-        batch.planned_ready_at(), projection.lower_bound);
+        batch.planned_ready_at(), current_year, projection.lower_bound, countdown);
     if (batch.completed_at()) {
         auto* end = table_->item(row, BatchEnd);
         end->setToolTip(end->toolTip() + QStringLiteral("\nРасчётный конец цикла: %1")
-                                          .arg(qt_convert::format_time(batch.expected_ready_at())));
+                                          .arg(format_batch_time(batch.expected_ready_at(), current_year)));
     }
-    const auto status = projection.status;
     set_cell(table_, row, BatchStatusName, qt_convert::text(display_name(status)));
     if (table_->isColumnHidden(table_->actions_column()) || status == BatchStatus::Completed) return;
 
@@ -154,7 +178,7 @@ void BatchesTab::fill_row(int row, const Batch& batch) {
         action->setAccessibleName(QStringLiteral("Начать обработку партии №%1").arg(id));
     } else {
         const QString unavailable = status == BatchStatus::InProgress
-            ? QStringLiteral("Конец цикла в %1.").arg(qt_convert::format_time(projection.end))
+            ? QStringLiteral("Конец цикла в %1.").arg(format_batch_time(projection.end, current_year))
             : QString();
         auto* action = add_row_action(actions, QStringLiteral("Завершить партию"), [this, id] { complete(id); }, unavailable);
         action->setAccessibleName(QStringLiteral("Завершить партию №%1").arg(id));

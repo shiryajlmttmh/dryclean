@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QSet>
 #include <QStringList>
 #include <QTableWidget>
 #include <QVariant>
@@ -32,6 +33,7 @@ public:
     void finish_rows();
     void reset_sort();
     void set_empty_text(const QString& text);
+    void fit_full_column_contents(int column);
     int actions_column() const noexcept;
 
 protected:
@@ -52,6 +54,7 @@ private:
     Qt::SortOrder sort_order_ = Qt::DescendingOrder;
     int actions_column_ = kNoColumn;
     QString empty_text_;
+    QSet<int> full_content_columns_;
 };
 
 void set_cell(TableWidget* table, int row, int column, const QString& text, bool right_aligned = false);

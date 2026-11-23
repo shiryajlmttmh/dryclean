@@ -24,7 +24,7 @@ signals:
 private:
     void start(Id id);
     void complete(Id id);
-    void fill_row(int row, const Batch& batch);
+    void fill_row(int row, const Batch& batch, int current_year);
 
     DryCleaningShop& shop_;
     Id employee_id_;
