@@ -46,8 +46,7 @@ OrderItemsDialog::OrderItemsDialog(DryCleaningShop& shop, Id employee_id, Id ord
     resize(kDialogWidth, kDialogHeight);
 
     summary_label_ = new QLabel(this);
-    table_ = new TableWidget(make_headers(kItemHeaders), this, ItemService, true);
-    table_->add_stretch_column(ItemKind);
+    table_ = new TableWidget(make_headers(kItemHeaders), this, true);
     edit_hint_ = new QLabel(this);
     edit_hint_->setWordWrap(true);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);

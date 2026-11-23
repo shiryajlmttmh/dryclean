@@ -21,7 +21,7 @@ constexpr const char* kHintStyle = "color: #666666;";
 
 LoginDialog::LoginDialog(DryCleaningShop& shop, QWidget* parent) : QDialog(parent), shop_(shop) {
     const bool setup = shop_.needs_password_setup();
-    setWindowTitle(setup ? QStringLiteral("Первый запуск") : QStringLiteral("Химчистка — вход"));
+    setWindowTitle(setup ? QStringLiteral("Первый запуск") : QStringLiteral("Химчистка - вход"));
     setMinimumWidth(kDialogWidth);
 
     auto* layout = new QVBoxLayout(this);
@@ -39,14 +39,14 @@ LoginDialog::LoginDialog(DryCleaningShop& shop, QWidget* parent) : QDialog(paren
 
     login_edit_ = new QLineEdit(this);
     if (setup) login_edit_->setText(QStringLiteral("admin"));
-    form->addRow(QStringLiteral("&Логин"), login_edit_);
+    form->addRow(QStringLiteral("Логин"), login_edit_);
     password_edit_ = new QLineEdit(this);
     password_edit_->setEchoMode(QLineEdit::Password);
-    form->addRow(QStringLiteral("&Пароль"), password_edit_);
+    form->addRow(QStringLiteral("Пароль"), password_edit_);
     if (setup) {
         confirmation_edit_ = new QLineEdit(this);
         confirmation_edit_->setEchoMode(QLineEdit::Password);
-        form->addRow(QStringLiteral("Пов&торите пароль"), confirmation_edit_);
+        form->addRow(QStringLiteral("Повторите пароль"), confirmation_edit_);
     }
 
     error_label_ = new QLabel(this);

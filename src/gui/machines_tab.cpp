@@ -227,7 +227,7 @@ private:
 
 MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kMachineHeaders),
-               parent, MachineName, true) {}
+               parent, true) {}
 
 void MachinesTab::add_extra_actions(QHBoxLayout* actions, Id id) {
     add_row_action(actions, QStringLiteral("Занятость"), [this, id] { show_history(id); });
@@ -265,7 +265,7 @@ void MachinesTab::show_history(Id id) {
         return left->effective_start_at() < right->effective_start_at();
     });
     QDialog dialog(this);
-    dialog.setWindowTitle(QStringLiteral("Занятость — ") + qt_convert::text(machine.name()));
+    dialog.setWindowTitle(QStringLiteral("Занятость - ") + qt_convert::text(machine.name()));
     dialog.resize(kHistoryWindowWidth, kHistoryWindowHeight);
     auto* layout = new QVBoxLayout(&dialog);
     auto* modes = new QButtonGroup(&dialog);
@@ -302,7 +302,7 @@ void MachinesTab::show_history(Id id) {
     auto* view = new MachineTimeline(shop_, id, &dialog);
     layout->addWidget(view);
     auto* legend = new QLabel(QStringLiteral(
-        "Зелёный — без партий · синий — завершена · фиолетовый — запущена · оранжевый — ожидает запуска"), &dialog);
+        "Зелёный - без партий · синий - завершена · фиолетовый - запущена · оранжевый - ожидает запуска"), &dialog);
     legend->setWordWrap(true);
     layout->addWidget(legend);
 
@@ -312,7 +312,7 @@ void MachinesTab::show_history(Id id) {
         const auto label = QStringLiteral("dd.MM.yyyy");
         const QDate first = first_day(date, weekly);
         period->setText(weekly
-            ? QStringLiteral("%1 – %2").arg(first.toString(label), first.addDays(kDaysPerWeek - 1).toString(label))
+            ? QStringLiteral("%1 - %2").arg(first.toString(label), first.addDays(kDaysPerWeek - 1).toString(label))
             : date.toString(label));
         const auto previous_name = weekly ? QStringLiteral("Предыдущая неделя") : QStringLiteral("Предыдущий день");
         const auto next_name = weekly ? QStringLiteral("Следующая неделя") : QStringLiteral("Следующий день");
@@ -340,7 +340,7 @@ void MachinesTab::show_history(Id id) {
         update_period();
     });
     update_period();
-    auto* table = new TableWidget(make_headers(kHistoryHeaders), &dialog, HistoryStatus);
+    auto* table = new TableWidget(make_headers(kHistoryHeaders), &dialog);
     table->set_empty_text(QStringLiteral("У этой машины пока нет партий."));
     table->reset_rows(static_cast<int>(history.size()));
     for (int row = 0; row < static_cast<int>(history.size()); ++row) {

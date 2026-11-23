@@ -10,11 +10,11 @@
 #include "gui/table_utils.h"
 
 TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-                   QWidget* parent, int stretch_column, bool has_view_actions)
+                   QWidget* parent, bool has_view_actions)
     : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission),
       has_view_actions_(has_view_actions) {
-    add_button_ = new QPushButton(QStringLiteral("&Добавить"), this);
-    table_ = new TableWidget(headers, this, stretch_column, true);
+    add_button_ = new QPushButton(QStringLiteral("Добавить"), this);
+    table_ = new TableWidget(headers, this, true);
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(add_button_, 0, Qt::AlignLeft);

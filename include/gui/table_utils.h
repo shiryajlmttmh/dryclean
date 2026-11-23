@@ -25,13 +25,12 @@ QStringList make_headers(const std::array<const char*, N>& names) {
 
 class TableWidget : public QTableWidget {
 public:
-    TableWidget(const QStringList& headers, QWidget* parent, int stretch_column = -1, bool has_actions = false);
+    TableWidget(const QStringList& headers, QWidget* parent, bool has_actions = false);
 
     void reset_rows(int count);
     void finish_rows();
     void reset_sort();
     void set_empty_text(const QString& text);
-    void add_stretch_column(int column);
     int actions_column() const noexcept;
 
 protected:

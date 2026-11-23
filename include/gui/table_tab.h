@@ -15,7 +15,7 @@ class TableTab : public QWidget {
 
 public:
     TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-             QWidget* parent, int stretch_column, bool has_view_actions = false);
+             QWidget* parent, bool has_view_actions = false);
 
 public slots:
     void refresh();

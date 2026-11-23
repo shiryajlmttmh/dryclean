@@ -87,7 +87,7 @@ void check_phone_parentheses(std::string_view text) {
         throw InvalidInputException("phone", "пропущена закрывающая скобка «)».");
     }
     if (pair_count > 1) {
-        throw InvalidInputException("phone", "в номере допустима одна пара скобок вокруг кода оператора. Пример — (29).");
+        throw InvalidInputException("phone", "в номере допустима одна пара скобок вокруг кода оператора. Пример - (29).");
     }
 }
 
@@ -165,7 +165,7 @@ std::string parse_mobile_number(std::string_view text) {
         const auto closing = text.find(')');
         const auto code_in_brackets = text.substr(0, closing);
         if (code_in_brackets.find_first_of(kPhoneSeparators) != std::string_view::npos) {
-            throw InvalidInputException("phone", "пробелы и дефисы внутри скобок недопустимы. Пример — (29).");
+            throw InvalidInputException("phone", "пробелы и дефисы внутри скобок недопустимы. Пример - (29).");
         }
         if (code_in_brackets.size() != kMobileCodeLength) invalid_phone_parentheses();
         parenthesized_code = code_in_brackets;
@@ -186,7 +186,7 @@ std::string parse_mobile_number(std::string_view text) {
         if (length < kNationalPhoneLength && length != kMobileCodeLength &&
             length != kFirstSubscriberBoundary && length != kSecondSubscriberBoundary) {
             throw InvalidInputException("phone",
-                "пробел или дефис разбивает группу цифр. Пример группировки — +375 (29) 123-45-67.");
+                "пробел или дефис разбивает группу цифр. Пример группировки - +375 (29) 123-45-67.");
         }
     }
     if (national.size() != kNationalPhoneLength) invalid_phone_length();

@@ -74,7 +74,7 @@ QString describe(const Item::Defect& defect) {
     const QString summary = QStringLiteral("%1 · %2 · %3 см²")
         .arg(qt_convert::text(defect.name), qt_convert::text(display_name(defect.type)),
              QString::number(defect.area_cm2, 'f', kAreaDecimals));
-    return defect.description.empty() ? summary : summary + QStringLiteral(" — ") + qt_convert::text(defect.description);
+    return defect.description.empty() ? summary : summary + QStringLiteral(" - ") + qt_convert::text(defect.description);
 }
 
 }
@@ -202,7 +202,7 @@ QWidget* ItemDialog::build_services_page() {
     controls->addWidget(service_box_, kStretch);
     controls->addWidget(add_stage_button_);
 
-    stages_table_ = new TableWidget(make_headers(kStageHeaders), page, 1, true);
+    stages_table_ = new TableWidget(make_headers(kStageHeaders), page, true);
     stages_table_->set_empty_text(QStringLiteral("Выберите услугу и нажмите «Добавить этап»."));
     auto* order_hint = new QLabel(QStringLiteral(
         "Этапы выполняются по номерам. В базовом порядке они показаны сверху вниз."), page);
@@ -363,7 +363,7 @@ void ItemDialog::refresh_stages() {
             const auto type = static_cast<ServiceType>(service_box_->itemData(index).toInt());
             const auto blocked = service_block(type);
             auto label = qt_convert::text(display_name(type));
-            if (!blocked.isEmpty()) label += QStringLiteral(" — недоступна");
+            if (!blocked.isEmpty()) label += QStringLiteral(" - недоступна");
             service_box_->setItemText(index, label);
             service_box_->setItemData(index, blocked, Qt::ToolTipRole);
         }
@@ -379,7 +379,7 @@ void ItemDialog::refresh_stages() {
         auto name = qt_convert::text(display_name(service));
         if (!blocked.isEmpty()) {
             has_unavailable = true;
-            name += QStringLiteral(" — недоступна");
+            name += QStringLiteral(" - недоступна");
         }
         set_cell(stages_table_, row, 1, name);
         if (!blocked.isEmpty()) stages_table_->item(row, 1)->setToolTip(blocked);

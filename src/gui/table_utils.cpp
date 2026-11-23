@@ -4,7 +4,6 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
-#include <QList>
 #include <QMenu>
 #include <QPainter>
 #include <QStyle>
@@ -19,30 +18,14 @@ namespace {
 constexpr int kBaseRowRole = Qt::UserRole + 1;
 constexpr int kSortValueRole = Qt::UserRole + 2;
 constexpr int kMaxDataCellWidth = 180;
+constexpr int kMeasureAllRows = -1;
 constexpr auto kRecordIdProperty = "recordId";
 
 class TableHeader : public QHeaderView {
 public:
-    explicit TableHeader(QWidget* parent) : QHeaderView(Qt::Horizontal, parent) {
-        connect(this, &QHeaderView::sectionResized, this, [this](int column) {
-            if (sectionResizeMode(column) == ResizeToContents) request_layout();
-        });
-        connect(this, &QHeaderView::sortIndicatorChanged, this, [this] { request_layout(); });
-    }
-
-    void add_stretch_column(int column) {
-        stretch_columns_.append(column);
-        // Qt's Stretch mode can shrink a section below its own label width.
-        setSectionResizeMode(column, Fixed);
-        request_layout();
-    }
+    explicit TableHeader(QWidget* parent) : QHeaderView(Qt::Horizontal, parent) {}
 
 protected:
-    void resizeEvent(QResizeEvent* event) override {
-        QHeaderView::resizeEvent(event);
-        request_layout();
-    }
-
     QSize sectionSizeFromContents(int column) const override {
         ensurePolished();
         // Measure the same label and sort indicator that Qt actually paints.
@@ -51,43 +34,6 @@ protected:
         initStyleOptionForIndex(&option, column);
         return style()->sizeFromContents(QStyle::CT_HeaderSection, &option, {}, this);
     }
-
-private:
-    void request_layout() {
-        if (layout_pending_) return;
-        layout_pending_ = true;
-        QMetaObject::invokeMethod(this, [this] {
-            fit_stretch_columns();
-            layout_pending_ = false;
-        }, Qt::QueuedConnection);
-    }
-
-    void fit_stretch_columns() {
-        QList<int> visible_stretch;
-        int remaining = viewport()->width();
-        for (int column = 0; column < count(); ++column) {
-            if (isSectionHidden(column)) continue;
-            if (stretch_columns_.contains(column)) {
-                remaining -= sectionSizeHint(column);
-                visible_stretch.append(column);
-            } else {
-                remaining -= sectionSize(column);
-            }
-        }
-        if (visible_stretch.isEmpty()) return;
-
-        const int extra_space = std::max(0, remaining);
-        const int extra_per_column = extra_space / static_cast<int>(visible_stretch.size());
-        const int remainder = extra_space % static_cast<int>(visible_stretch.size());
-        for (int index = 0; index < visible_stretch.size(); ++index) {
-            const int column = visible_stretch[index];
-            const int extra = extra_per_column + (index < remainder ? 1 : 0);
-            resizeSection(column, sectionSizeHint(column) + extra);
-        }
-    }
-
-    QList<int> stretch_columns_;
-    bool layout_pending_ = false;
 };
 
 class TableItem : public QTableWidgetItem {
@@ -145,7 +91,7 @@ QToolButton* make_action_button(QHBoxLayout* layout, const QString& name, const 
 
 }
 
-TableWidget::TableWidget(const QStringList& headers, QWidget* parent, int stretch_column, bool has_actions)
+TableWidget::TableWidget(const QStringList& headers, QWidget* parent, bool has_actions)
     : QTableWidget(parent), empty_text_(QStringLiteral("Нет записей.")) {
     QStringList labels = headers;
     if (has_actions) {
@@ -161,13 +107,17 @@ TableWidget::TableWidget(const QStringList& headers, QWidget* parent, int stretc
     setSelectionMode(QAbstractItemView::SingleSelection);
     setAlternatingRowColors(true);
     setTabKeyNavigation(false);
+    setWordWrap(false);
+    setTextElideMode(Qt::ElideRight);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 
     verticalHeader()->hide();
     header->setSectionsClickable(true);
+    header->setStretchLastSection(false);
+    header->setResizeContentsPrecision(kMeasureAllRows);
     header->setSectionResizeMode(QHeaderView::ResizeToContents);
     header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    const int stretch = stretch_column >= 0 ? stretch_column : static_cast<int>(headers.size()) - 1;
-    header->add_stretch_column(stretch);
     connect(header, &QHeaderView::sectionClicked, this, &TableWidget::cycle_sort);
 }
 
@@ -190,9 +140,7 @@ void TableWidget::finish_rows() {
     if (sort_column_ >= 0) {
         sortItems(sort_column_, sort_order_);
     }
-    if (actions_column_ >= 0 && !isColumnHidden(actions_column_)) {
-        resizeColumnToContents(actions_column_);
-    }
+    resizeColumnsToContents();
     if (!focused_action_) return;
     const FocusedAction focus = *focused_action_;
     focused_action_.reset();
@@ -217,10 +165,6 @@ void TableWidget::set_empty_text(const QString& text) {
 }
 
 int TableWidget::actions_column() const noexcept { return actions_column_; }
-
-void TableWidget::add_stretch_column(int column) {
-    static_cast<TableHeader*>(horizontalHeader())->add_stretch_column(column);
-}
 
 void TableWidget::reset_sort() {
     sort_column_ = -1;

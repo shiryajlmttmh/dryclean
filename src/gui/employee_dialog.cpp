@@ -17,7 +17,7 @@ EmployeeDialog::EmployeeDialog(const DryCleaningShop& shop, const QString& title
     login_edit_ = new QLineEdit(qt_convert::text(initial.login()), this);
     password_edit_ = new QLineEdit(this);
     password_edit_->setEchoMode(QLineEdit::Password);
-    password_edit_->setPlaceholderText(initial.id() != 0 ? QStringLiteral("Пусто — сохранить пароль")
+    password_edit_->setPlaceholderText(initial.id() != 0 ? QStringLiteral("Пусто - сохранить пароль")
                                                             : QStringLiteral("Новый пароль, минимум 8 символов"));
     confirmation_edit_ = new QLineEdit(this);
     confirmation_edit_->setEchoMode(QLineEdit::Password);

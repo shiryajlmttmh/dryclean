@@ -68,9 +68,7 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     for (BatchStatus stage : {BatchStatus::Scheduled, BatchStatus::InProgress, BatchStatus::AwaitingConfirmation}) {
         stage_filter_->addItem(qt_convert::text(display_name(stage)), static_cast<int>(stage));
     }
-    table_ = new TableWidget(make_headers(kBatchHeaders), this, BatchItems, true);
-    table_->add_stretch_column(BatchMachine);
-    table_->add_stretch_column(BatchService);
+    table_ = new TableWidget(make_headers(kBatchHeaders), this, true);
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(filter_tabs_);
     layout->addWidget(stage_filter_, 0, Qt::AlignLeft);

@@ -27,7 +27,7 @@ namespace {
 constexpr int kDialogWidth = 900;
 constexpr int kDialogHeight = 600;
 constexpr int kWeightDecimals = 2;
-constexpr const char* kNoCost = "—";
+constexpr const char* kNoCost = "-";
 
 enum ItemColumn { ItemKind, ItemMaterial, ItemColor, ItemWeight, ItemSoil, ItemStains, ItemCost, ItemService, ItemColumnCount };
 
@@ -72,7 +72,7 @@ OrderDialog::OrderDialog(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 void OrderDialog::build_header(QFormLayout* form) {
     client_box_ = new QComboBox(this);
     for (const Client& client : shop_.search_clients(std::string())) {
-        const QString label = qt_convert::text(client.name()) + QStringLiteral(" — ") +
+        const QString label = qt_convert::text(client.name()) + QStringLiteral(" - ") +
                               qt_convert::text(format_phone(client.phone()));
         client_box_->addItem(label, static_cast<unsigned int>(client.id()));
     }
@@ -94,10 +94,9 @@ QWidget* OrderDialog::build_items_box() {
     auto* box = new QGroupBox(QStringLiteral("Изделия"), this);
     auto* layout = new QVBoxLayout(box);
 
-    auto* add_button = new QPushButton(QStringLiteral("&Добавить изделие"), box);
+    auto* add_button = new QPushButton(QStringLiteral("Добавить изделие"), box);
     layout->addWidget(add_button, 0, Qt::AlignLeft);
-    items_table_ = new TableWidget(make_headers(kItemHeaders), box, ItemService, true);
-    items_table_->add_stretch_column(ItemKind);
+    items_table_ = new TableWidget(make_headers(kItemHeaders), box, true);
     items_table_->set_empty_text(QStringLiteral("Нажмите «Добавить изделие», чтобы заполнить заказ."));
     layout->addWidget(items_table_);
 

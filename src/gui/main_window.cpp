@@ -130,7 +130,7 @@ QWidget* MainWindow::build_clients_tab() {
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
 
-    add_client_button_ = new QPushButton(QStringLiteral("&Добавить"), page);
+    add_client_button_ = new QPushButton(QStringLiteral("Добавить"), page);
     layout->addWidget(add_client_button_, 0, Qt::AlignLeft);
     client_search_ = new QLineEdit(page);
     client_search_->setPlaceholderText(QStringLiteral("Поиск по имени или телефону"));
@@ -138,7 +138,7 @@ QWidget* MainWindow::build_clients_tab() {
     client_search_->setClearButtonEnabled(true);
     layout->addWidget(client_search_);
 
-    clients_table_ = new TableWidget(make_headers(kClientHeaders), page, ClientName, true);
+    clients_table_ = new TableWidget(make_headers(kClientHeaders), page, true);
     layout->addWidget(clients_table_);
 
     connect(client_search_, &QLineEdit::textChanged, this, &MainWindow::refresh_clients);
@@ -150,7 +150,7 @@ QWidget* MainWindow::build_orders_tab() {
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
 
-    accept_order_button_ = new QPushButton(QStringLiteral("&Принять заказ"), page);
+    accept_order_button_ = new QPushButton(QStringLiteral("Принять заказ"), page);
     layout->addWidget(accept_order_button_, 0, Qt::AlignLeft);
 
     auto* filters = new QHBoxLayout;
@@ -177,7 +177,7 @@ QWidget* MainWindow::build_orders_tab() {
     filters->addStretch();
     layout->addLayout(filters);
 
-    orders_table_ = new TableWidget(make_headers(kOrderHeaders), page, OrderService, true);
+    orders_table_ = new TableWidget(make_headers(kOrderHeaders), page, true);
     layout->addWidget(orders_table_);
 
     connect(order_filters_, &QButtonGroup::idToggled, this, [this](int, bool checked) {
@@ -332,14 +332,13 @@ void MainWindow::fill_order_actions(int row, const Order& order, TimePoint now) 
     } else if (order.status() == OrderStatus::Accepted) {
         orders_table_->item(row, OrderStatusName)->setToolTip(
             QStringLiteral("Заказ перейдёт в обработку после подтверждения плана для его изделий."));
+        if (has_permission(shop_, employee_id_, Permission::AcceptOrders) && shop_.is_order_editable(id)) {
+            add_remove_action(actions, QStringLiteral("Удалить заказ"), [this, id] { remove_order(id); });
+        }
     }
     auto* menu = add_more_actions(actions, QStringLiteral("Действия с заказом №%1").arg(id));
     menu->addAction(QStringLiteral("Изделия заказа"), this, [this, id] { show_order_items(id); });
     menu->addAction(QStringLiteral("История заказа"), this, [this, id] { show_order_history(id); });
-    if (has_permission(shop_, employee_id_, Permission::AcceptOrders) && shop_.is_order_editable(id)) {
-        menu->addSeparator();
-        menu->addAction(QStringLiteral("Удалить заказ"), this, [this, id] { remove_order(id); });
-    }
 }
 
 void MainWindow::show_order_items(Id id) {

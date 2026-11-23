@@ -249,7 +249,7 @@ void PlanningTab::show_batches(const Plan* preview) {
     int number = 0;
     for (const PlannedBatch& batch : preview->batches) {
         const auto service = qt_convert::text(display_name(batch.service_type));
-        const auto summary = QStringLiteral("%1 · %2\n%3 – %4 · Загрузка %5")
+        const auto summary = QStringLiteral("%1 · %2\n%3 - %4 · Загрузка %5")
             .arg(machine_name(shop_, batch.machine_id), service,
                  short_time(batch.planned_start_at), short_time(batch.planned_ready_at),
                  qt_convert::text(format_percent(batch.fill_ratio)));

@@ -24,7 +24,7 @@ inline QString format_time(TimePoint value) {
 }
 
 inline QString format_time(const std::optional<TimePoint>& value) {
-    return value ? format_time(*value) : QStringLiteral("—");
+    return value ? format_time(*value) : QStringLiteral("-");
 }
 
 inline QString format_time_remaining(TimePoint ready_at, TimePoint now) {
