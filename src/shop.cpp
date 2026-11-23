@@ -215,21 +215,50 @@ std::map<Id, std::vector<const Batch*>> machine_queues(const Repository<Batch>& 
     return queues;
 }
 
+ShopForecast project_machine_queues(const Repository<Batch>& batches, const Repository<Machine>& machines,
+                                    TimePoint now) {
+    ShopForecast forecast;
+    forecast.now = now;
+    for (const Machine& machine : machines) forecast.machines.emplace(machine.id(), MachineForecast{now});
+    for (const auto& [id, queue] : machine_queues(batches)) {
+        auto& machine = forecast.machines.at(id);
+        for (const Batch* batch : queue) {
+            const auto status = batch->status_at(now);
+            const bool waiting = status == BatchStatus::Scheduled;
+            const auto start = waiting ? std::max(batch->planned_start_at(), machine.available_at)
+                                       : batch->effective_start_at();
+            const auto end = batch->completed_at().value_or(start + batch->duration());
+            const auto release = status == BatchStatus::AwaitingConfirmation ? std::max(end, now) : end;
+            const bool lower_bound = waiting && (machine.reserved || start > batch->planned_start_at());
+            forecast.batches.emplace(batch->id(), BatchForecast{start, end, release, status, lower_bound});
+            machine.available_at = std::max(machine.available_at, release);
+            machine.reserved = machine.reserved || status != BatchStatus::Completed || end > now;
+            machine.awaiting_confirmation = machine.awaiting_confirmation || status == BatchStatus::AwaitingConfirmation;
+        }
+    }
+    return forecast;
+}
+
 void check_machine_queues(const Repository<Batch>& batches, const Repository<Machine>& machines) {
     for (const auto& [machine_id, queue] : machine_queues(batches)) {
-        TimePoint end{};
+        TimePoint actual_end{};
+        TimePoint planned_end{};
         bool has_unfinished = false;
         for (const Batch* batch : queue) {
-            if (batch->started_at() && has_unfinished) {
-                throw IntegrityException("партия запущена до подтверждения предыдущей партии машины");
-            }
-            if (batch->effective_start_at() < end) {
-                throw IntegrityException("партии одной машины пересекаются по времени");
+            if (batch->started_at()) {
+                if (has_unfinished || *batch->started_at() < actual_end) {
+                    throw IntegrityException("партия запущена до подтверждения предыдущей партии машины");
+                }
+                actual_end = batch->occupied_until();
+            } else {
+                if (batch->planned_start_at() < planned_end) {
+                    throw IntegrityException("планы ожидающих партий одной машины пересекаются");
+                }
+                planned_end = batch->planned_ready_at();
             }
             has_unfinished = has_unfinished || batch->status() != BatchStatus::Completed;
-            end = batch->occupied_until();
         }
-        if (machines.get(machine_id).free_at() < end) {
+        if (machines.get(machine_id).free_at() < std::max(actual_end, planned_end)) {
             throw IntegrityException("машина освобождается раньше окончания своих партий");
         }
     }
@@ -984,10 +1013,6 @@ double DryCleaningShop::calculate_order_cost(Id order_id) const {
     return Service::round_money(total);
 }
 
-std::optional<TimePoint> DryCleaningShop::estimate_ready_time(Id order_id) const {
-    return orders_.get(order_id).planned_ready_at();
-}
-
 std::vector<Order> DryCleaningShop::orders_by_status(OrderStatus status) const {
     return orders_.find_if([status](const Order& order) { return order.status() == status; });
 }
@@ -1087,31 +1112,40 @@ Hours DryCleaningShop::finishing_hours(const Item& item, const Order& order) con
     return std::max(0.0, turnaround - selected.calculate_processing(item, order.is_urgent()));
 }
 
-std::map<Id, TimePoint> DryCleaningShop::forecast_machine_availability(TimePoint now) const {
-    std::map<Id, TimePoint> available;
-    for (const Machine& machine : machines_) available.emplace(machine.id(), now);
-    for (const auto& [machine_id, queue] : machine_queues(batches_)) {
-        TimePoint& slot = available.at(machine_id);
-        for (const Batch* batch : queue) {
-            if (batch->status() == BatchStatus::Scheduled) {
-                slot = std::max(slot, batch->planned_start_at()) + batch->duration();
-            } else {
-                slot = std::max(slot, batch->occupied_until());
+ShopForecast DryCleaningShop::forecast_at(TimePoint now) const {
+    auto forecast = project_machine_queues(batches_, machines_, now);
+    for (const Order& order : orders_) {
+        OrderForecast result;
+        if (order.status() == OrderStatus::Accepted || order.status() == OrderStatus::InProgress) {
+            result.overdue = order.is_overdue(now);
+            for (Id id : order.item_ids()) {
+                const Item& item = items_.get(id);
+                if (!item.is_batched() || !item.is_last_service()) {
+                    result.ready_at.reset();
+                    result.lower_bound = false;
+                    break;
+                }
+                const auto& batch = forecast.batches.at(item.batch_id());
+                const auto ready = add_hours(batch.release, finishing_hours(item, order));
+                if (!result.ready_at || ready > *result.ready_at) result.ready_at = ready;
+                result.lower_bound = result.lower_bound || batch.lower_bound || batch.status == BatchStatus::AwaitingConfirmation;
             }
+            if (result.ready_at && *result.ready_at < now) {
+                result.ready_at = now;
+                result.lower_bound = true;
+            }
+            result.at_risk = !result.overdue && result.ready_at && *result.ready_at > order.deadline();
         }
+        forecast.orders.emplace(order.id(), result);
     }
-    for (const Machine& machine : machines_) {
-        auto& slot = available.at(machine.id());
-        slot = std::max(slot, machine.free_at());
-    }
-    return available;
+    return forecast;
 }
 
 Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
     require_permission(acting_employee, Permission::BuildPlan);
     std::vector<Machine> machines(machines_.begin(), machines_.end());
-    const auto available = forecast_machine_availability(now);
-    for (Machine& machine : machines) machine.set_free_at(available.at(machine.id()));
+    const auto forecast = project_machine_queues(batches_, machines_, now);
+    for (Machine& machine : machines) machine.set_free_at(forecast.machines.at(machine.id()).available_at);
     const std::vector<Material> materials = materials_.find_if([](const Material&) { return true; });
     Plan plan = planner_.build_plan(collect_plan_items(now), machines, materials, now, revision_);
     for (auto& entry : plan.order_ready_at) {
@@ -1127,7 +1161,7 @@ Plan DryCleaningShop::build_plan(TimePoint now, Id acting_employee) const {
             if (item.is_batched()) {
                 entry.second = std::max(
                     *entry.second,
-                    add_hours(batches_.get(item.batch_id()).occupied_until(), finishing_hours(item, orders_.get(entry.first))));
+                    add_hours(forecast.batches.at(item.batch_id()).release, finishing_hours(item, orders_.get(entry.first))));
             }
         }
     }
@@ -1223,14 +1257,14 @@ void DryCleaningShop::check_material_stock(const std::map<Id, double>& needed) c
 
 void DryCleaningShop::check_schedule(std::vector<PlannedBatch>& batches, const std::vector<Hours>& durations,
                                      const Plan& plan) const {
-    auto cursor = forecast_machine_availability(plan.built_at);
+    auto forecast = project_machine_queues(batches_, machines_, plan.built_at);
     std::map<Id, Hours> work;
     for (std::size_t i = 0; i < batches.size(); ++i) {
         work[batches[i].machine_id] += durations[i];
         if (work[batches[i].machine_id] > machines_.get(batches[i].machine_id).maintenance_remaining() + EPS) {
             throw PlanningException("план превышает оставшийся ресурс машины до ТО");
         }
-        TimePoint& slot = cursor[batches[i].machine_id];
+        TimePoint& slot = forecast.machines.at(batches[i].machine_id).available_at;
         batches[i].planned_start_at = slot;
         batches[i].planned_ready_at = add_hours(slot, durations[i]);
         for (Id id : batches[i].item_ids) {
@@ -1320,7 +1354,7 @@ std::vector<Id> DryCleaningShop::confirm_plan(const Plan& plan, Id acting_employ
         }
         Machine& machine = machines.get(planned.machine_id);
         machine.reserve_work(hours_between(planned.planned_ready_at, planned.planned_start_at));
-        machine.occupy_until(planned.planned_ready_at);
+        machine.set_free_at(planned.planned_ready_at);
     }
     for (const auto& entry : consumption) {
         materials.get(entry.first).write_off(entry.second);
@@ -1374,51 +1408,34 @@ void DryCleaningShop::start_batch(Id batch_id, Id acting_employee, TimePoint now
     if (!blocked.empty()) throw InvalidInputException("batch", blocked);
     Batch updated = batches_.get(batch_id);
     updated.start(acting_employee, now);
-    apply_batch_event(updated, acting_employee, now);
+    apply_batch_event(updated);
 }
 
 void DryCleaningShop::complete_batch(Id batch_id, Id acting_employee, TimePoint now) {
     begin_mutation(acting_employee, Permission::ChangeStatus);
     Batch updated = batches_.get(batch_id);
     updated.complete(acting_employee, now);
-    apply_batch_event(updated, acting_employee, now);
+    apply_batch_event(updated);
 }
 
-void DryCleaningShop::apply_batch_event(const Batch& updated, Id acting_employee, TimePoint now) {
+void DryCleaningShop::apply_batch_event(const Batch& updated) {
     updated.validate();
     Repository<Batch> batches = batches_;
     replace_by_id(batches, updated);
     Repository<Item> items = items_;
-    Repository<Order> orders = orders_;
     Repository<Machine> machines = machines_;
-    std::set<Id> touched_orders;
-    for (Id id : updated.item_ids()) {
-        Item& item = items.get(id);
-        if (updated.status() == BatchStatus::Completed) item.complete_service();
-        touched_orders.insert(item.order_id());
+    if (updated.status() == BatchStatus::Completed) {
+        for (Id id : updated.item_ids()) items.get(id).complete_service();
     }
-    std::vector<Batch*> waiting;
-    for (Batch& batch : batches) {
+    auto reserved_until = updated.occupied_until();
+    for (const Batch& batch : batches) {
         if (batch.machine_id() == updated.machine_id() && batch.status() == BatchStatus::Scheduled) {
-            waiting.push_back(&batch);
+            reserved_until = std::max(reserved_until, batch.planned_ready_at());
         }
     }
-    std::ranges::sort(waiting, {}, &Batch::id);
-    auto slot = updated.occupied_until();
-    for (Batch* batch : waiting) {
-        if (batch->planned_start_at() < slot) {
-            batch->postpone_to(slot);
-            for (Id id : batch->item_ids()) touched_orders.insert(items.get(id).order_id());
-        }
-        slot = batch->planned_ready_at();
-    }
-    machines.get(updated.machine_id()).set_free_at(slot);
-    advance_orders(orders, items, batches, touched_orders, [this](const Item& item, const Order& order) {
-        return finishing_hours(item, order);
-    }, acting_employee, now);
+    machines.get(updated.machine_id()).set_free_at(reserved_until);
     batches_.swap(batches);
     items_.swap(items);
-    orders_.swap(orders);
     machines_.swap(machines);
     publish();
 }

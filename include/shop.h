@@ -10,6 +10,7 @@
 
 #include "batch_planner.h"
 #include "entity_names.h"
+#include "forecast.h"
 #include "repository.h"
 #include "services.h"
 #include "storage.h"
@@ -87,7 +88,7 @@ public:
     void update_item(const Item& item, Id acting_employee);
     double calculate_item_cost(Id item_id) const;
     double calculate_order_cost(Id order_id) const;
-    std::optional<TimePoint> estimate_ready_time(Id order_id) const;
+    ShopForecast forecast_at(TimePoint now) const;
     std::vector<Order> orders_by_status(OrderStatus status) const;
     std::vector<Order> find_overdue_orders(TimePoint now) const;
     bool is_order_editable(Id order_id) const;
@@ -127,8 +128,7 @@ private:
     double item_cost(const Item& item, bool urgent, double discount) const;
     Hours item_duration(const Item& item, bool urgent) const;
     bool has_unfinished_batch(Id machine_id) const;
-    std::map<Id, TimePoint> forecast_machine_availability(TimePoint now) const;
-    void apply_batch_event(const Batch& updated, Id acting_employee, TimePoint now);
+    void apply_batch_event(const Batch& updated);
     class PlanClaims {
     public:
         explicit PlanClaims(const std::vector<PlanItem>& candidates);

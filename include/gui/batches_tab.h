@@ -6,14 +6,13 @@
 
 class QTabBar;
 class QComboBox;
-class QTimer;
 class TableWidget;
 
 class BatchesTab : public QWidget {
     Q_OBJECT
 
 public:
-    BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent = nullptr);
+    BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast& forecast, QWidget* parent = nullptr);
 
 public slots:
     void refresh();
@@ -24,12 +23,12 @@ signals:
 private:
     void start(Id id);
     void complete(Id id);
-    void fill_row(int row, const Batch& batch, TimePoint now);
+    void fill_row(int row, const Batch& batch);
 
     DryCleaningShop& shop_;
     Id employee_id_;
+    const ShopForecast& forecast_;
     QTabBar* filter_tabs_;
     QComboBox* stage_filter_;
-    QTimer* status_timer_;
     TableWidget* table_;
 };

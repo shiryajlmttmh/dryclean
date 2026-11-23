@@ -3,8 +3,14 @@
 #include "gui/table_tab.h"
 
 class MachinesTab : public TableTab {
+    Q_OBJECT
+
 public:
-    MachinesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent = nullptr);
+    MachinesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast& forecast, QWidget* parent = nullptr);
+    void refresh_history();
+
+signals:
+    void forecast_changed();
 
 protected:
     void fill(TableWidget* table) override;
@@ -17,4 +23,5 @@ protected:
 private:
     void show_history(Id id);
     void service_machine(Id id);
+    const ShopForecast& forecast_;
 };

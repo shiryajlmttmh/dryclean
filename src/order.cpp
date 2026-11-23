@@ -163,7 +163,7 @@ void Order::change_status(OrderStatus status, Id employee_id, TimePoint when) {
 }
 
 bool Order::is_overdue(TimePoint now) const noexcept {
-    return (status_ == OrderStatus::Accepted || status_ == OrderStatus::InProgress) && now > deadline_;
+    return (status_ == OrderStatus::Accepted || status_ == OrderStatus::InProgress) && now >= deadline_;
 }
 
 void Order::validate() const {

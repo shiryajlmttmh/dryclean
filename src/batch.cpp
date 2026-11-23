@@ -70,12 +70,6 @@ std::optional<Id> Batch::completed_by() const noexcept { return completed_by_; }
 
 void Batch::set_id(Id id) noexcept { id_ = id; }
 
-void Batch::postpone_to(TimePoint start) noexcept {
-    if (status() != BatchStatus::Scheduled || start <= planned_start_at_) return;
-    planned_ready_at_ = start + duration();
-    planned_start_at_ = start;
-}
-
 void Batch::start(Id employee_id, TimePoint now) {
     if (status() != BatchStatus::Scheduled) {
         throw InvalidInputException("status", "партия уже была запущена");

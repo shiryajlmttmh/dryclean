@@ -49,6 +49,7 @@ constexpr int kOverdueOrders = -2;
 constexpr double kNoDiscount = 0.0;
 constexpr int kStatusRightMargin = 16;
 constexpr int kClockRefreshMs = 30000;
+constexpr int kPopupRefreshRetryMs = 250;
 constexpr const char* kStatusSeparator = "   |   ";
 
 enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
@@ -65,16 +66,17 @@ enum OrderColumn {
     OrderCost,
     OrderDeadline,
     OrderReady,
+    OrderDeadlineState,
     OrderColumnCount
 };
 
 constexpr std::array<const char*, OrderColumnCount> kOrderHeaders{
-    "№", "Клиент", "Услуги", "Срочный", "Статус", "Изделий", "Цена", "Срок", "Прогноз"};
+    "№", "Клиент", "Услуги", "Срочный", "Статус", "Изделий", "Цена", "Срок", "Прогноз", "По сроку"};
 
 }
 
 MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : QMainWindow(parent), shop_(shop), employee_id_(employee_id) {
+    : QMainWindow(parent), shop_(shop), employee_id_(employee_id), forecast_(shop_.forecast_at(qt_convert::now())) {
     setWindowTitle(QStringLiteral("Химчистка"));
     resize(kDefaultWidth, kDefaultHeight);
 
@@ -82,11 +84,11 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     tabs->addTab(build_clients_tab(), QStringLiteral("Клиенты"));
     tabs->addTab(build_orders_tab(), QStringLiteral("Заказы"));
     planning_tab_ = new PlanningTab(shop_, employee_id_, this);
-    batches_tab_ = new BatchesTab(shop_, employee_id_, this);
+    batches_tab_ = new BatchesTab(shop_, employee_id_, forecast_, this);
     tabs->addTab(planning_tab_, QStringLiteral("Планирование"));
     tabs->addTab(batches_tab_, QStringLiteral("Партии"));
     add_record_tab(tabs, new MaterialsTab(shop_, employee_id_, this), QStringLiteral("Склад"));
-    machines_tab_ = new MachinesTab(shop_, employee_id_, this);
+    machines_tab_ = new MachinesTab(shop_, employee_id_, forecast_, this);
     add_record_tab(tabs, machines_tab_, QStringLiteral("Оборудование"));
     add_record_tab(tabs, new EmployeesTab(shop_, employee_id_, this), QStringLiteral("Сотрудники"));
     connect(planning_tab_, &PlanningTab::changed, this, &MainWindow::refresh);
@@ -101,7 +103,8 @@ MainWindow::MainWindow(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     refresh();
 
     auto* clock_timer = new QTimer(this);
-    connect(clock_timer, &QTimer::timeout, this, &MainWindow::refresh_clock_views);
+    clock_timer->setTimerType(Qt::PreciseTimer);
+    connect(clock_timer, &QTimer::timeout, this, &MainWindow::on_clock_timeout);
     clock_timer->start(kClockRefreshMs);
 }
 
@@ -195,22 +198,27 @@ void MainWindow::save() {
 void MainWindow::refresh() {
     set_suggestions(client_search_, record_suggestions(shop_, SuggestionKind::ClientName));
     refresh_clients();
-    refresh_orders();
-    planning_tab_->refresh();
-    batches_tab_->refresh();
+    refresh_clock_views();
     for (TableTab* tab : record_tabs_) {
-        tab->refresh();
+        if (tab != machines_tab_) tab->refresh();
     }
     update_status();
 }
 
-void MainWindow::refresh_clock_views() {
-    if (QApplication::activeModalWidget() || QApplication::activePopupWidget()) {
+void MainWindow::on_clock_timeout() {
+    if (QApplication::activePopupWidget()) {
+        QTimer::singleShot(kPopupRefreshRetryMs, this, &MainWindow::on_clock_timeout);
         return;
     }
+    refresh_clock_views();
+}
+
+void MainWindow::refresh_clock_views() {
+    forecast_ = shop_.forecast_at(qt_convert::now());
     planning_tab_->refresh();
     batches_tab_->refresh();
     machines_tab_->refresh();
+    machines_tab_->refresh_history();
     refresh_orders();
 }
 
@@ -259,7 +267,7 @@ void MainWindow::refresh_clients() {
 std::vector<Order> MainWindow::filtered_orders() const {
     const int filter = order_filters_->checkedId();
     if (filter == kOverdueOrders) {
-        return shop_.find_overdue_orders(qt_convert::now());
+        return shop_.orders().find_if([this](const Order& order) { return forecast_.orders.at(order.id()).overdue; });
     }
     if (filter == kAllStatuses) {
         return std::vector<Order>(shop_.orders().begin(), shop_.orders().end());
@@ -281,7 +289,6 @@ void MainWindow::refresh_orders() {
             ? QStringLiteral("Принятых заказов пока нет. Нажмите «Принять заказ».")
             : QStringLiteral("Для выбранного фильтра заказов нет."));
         orders_table_->reset_rows(static_cast<int>(shown.size()));
-        const TimePoint now = qt_convert::now();
         int row = 0;
         for (const Order& order : shown) {
             const Client* client = shop_.clients().find_by_id(order.client_id());
@@ -302,8 +309,17 @@ void MainWindow::refresh_orders() {
             set_sortable_cell(orders_table_, row, OrderCost, qt_convert::text(format_money(order.total_cost())),
                               order.total_cost(), true);
             set_time_cell(orders_table_, row, OrderDeadline, order.deadline());
-            set_time_cell(orders_table_, row, OrderReady, order.planned_ready_at());
-            fill_order_actions(row, order, now);
+            const auto& projection = forecast_.orders.at(order.id());
+            const auto actual = order.actual_ready_at();
+            const QString ready = actual ? QStringLiteral("Факт: %1").arg(qt_convert::format_time(actual))
+                : !projection.ready_at ? QStringLiteral("Нет прогноза")
+                : projection.lower_bound ? QStringLiteral("Не раньше %1").arg(qt_convert::format_time(projection.ready_at))
+                : qt_convert::format_time(projection.ready_at);
+            set_sortable_cell(orders_table_, row, OrderReady, ready,
+                              time_sort_value(actual ? actual : projection.ready_at));
+            set_cell(orders_table_, row, OrderDeadlineState, projection.overdue ? QStringLiteral("Просрочен")
+                : projection.at_risk ? QStringLiteral("Риск просрочки") : QStringLiteral("-"));
+            fill_order_actions(row, order, forecast_.now);
             ++row;
         }
         orders_table_->finish_rows();

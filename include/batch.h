@@ -35,7 +35,6 @@ public:
     std::optional<Id> completed_by() const noexcept;
 
     void set_id(Id id) noexcept;
-    void postpone_to(TimePoint start) noexcept;
     void start(Id employee_id, TimePoint now);
     void complete(Id employee_id, TimePoint now);
 

@@ -3,12 +3,10 @@
 #include <QComboBox>
 #include <QSignalBlocker>
 #include <QTabBar>
-#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <array>
 #include <algorithm>
-#include <limits>
 #include <vector>
 
 #include "display.h"
@@ -48,15 +46,18 @@ QString short_time(TimePoint time) {
     return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("dd.MM HH:mm"));
 }
 
-void set_batch_time(TableWidget* table, int row, int column, TimePoint time, const QString& kind) {
-    set_sortable_cell(table, row, column, short_time(time), time_sort_value(time));
-    table->item(row, column)->setToolTip(QStringLiteral("%1: %2").arg(kind, qt_convert::format_time(time)));
+void set_batch_time(TableWidget* table, int row, int column, TimePoint time, const QString& kind,
+                    TimePoint planned, bool lower_bound) {
+    const QString prefix = lower_bound ? QStringLiteral("Не раньше %1") : QStringLiteral("%1");
+    set_sortable_cell(table, row, column, prefix.arg(short_time(time)), time_sort_value(time));
+    table->item(row, column)->setToolTip(QStringLiteral("%1: %2\nПо плану: %3")
+        .arg(kind, prefix.arg(qt_convert::format_time(time)), qt_convert::format_time(planned)));
 }
 
 }
 
-BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : QWidget(parent), shop_(shop), employee_id_(employee_id) {
+BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast& forecast, QWidget* parent)
+    : QWidget(parent), shop_(shop), employee_id_(employee_id), forecast_(forecast) {
     filter_tabs_ = new QTabBar(this);
     filter_tabs_->setExpanding(false);
     filter_tabs_->addTab(QStringLiteral("Незавершённые"));
@@ -74,10 +75,6 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     layout->addWidget(stage_filter_, 0, Qt::AlignLeft);
     layout->addWidget(table_);
 
-    status_timer_ = new QTimer(this);
-    status_timer_->setSingleShot(true);
-    status_timer_->setTimerType(Qt::PreciseTimer);
-    connect(status_timer_, &QTimer::timeout, this, &BatchesTab::refresh);
     connect(filter_tabs_, &QTabBar::currentChanged, this, &BatchesTab::refresh);
     connect(stage_filter_, &QComboBox::currentIndexChanged, this, &BatchesTab::refresh);
     refresh();
@@ -87,28 +84,18 @@ void BatchesTab::refresh() {
     const int filter = filter_tabs_->currentIndex();
     stage_filter_->setVisible(filter == Unfinished);
     const int stage = stage_filter_->currentData().toInt();
-    const TimePoint now = qt_convert::now();
     const std::optional<Id> selected = selected_id(table_, BatchId);
     std::vector<const Batch*> shown;
-    std::optional<TimePoint> next_transition;
     for (const Batch& batch : shop_.batches()) {
-        const BatchStatus status = batch.status_at(now);
+        const BatchStatus status = forecast_.batches.at(batch.id()).status;
         if (matches_filter(status, filter, stage)) shown.push_back(&batch);
-        if (status == BatchStatus::InProgress && (!next_transition || batch.expected_ready_at() < *next_transition)) {
-            next_transition = batch.expected_ready_at();
-        }
     }
-    status_timer_->stop();
-    if (next_transition) {
-        const auto delay = (*next_transition - now).count();
-        status_timer_->start(static_cast<int>(std::min<decltype(delay)>(delay, std::numeric_limits<int>::max())));
-    }
-    std::stable_sort(shown.begin(), shown.end(), [](const Batch* left, const Batch* right) {
+    std::stable_sort(shown.begin(), shown.end(), [this](const Batch* left, const Batch* right) {
         const auto left_end = left->completed_at();
         const auto right_end = right->completed_at();
         if (left_end && right_end) return *left_end > *right_end;
         if (left_end || right_end) return !left_end;
-        return left->expected_ready_at() < right->expected_ready_at();
+        return forecast_.batches.at(left->id()).end < forecast_.batches.at(right->id()).end;
     });
     const QSignalBlocker blocker(table_);
     table_->set_empty_text(shop_.batches().empty()
@@ -122,13 +109,13 @@ void BatchesTab::refresh() {
     table_->reset_rows(static_cast<int>(shown.size()));
     int row = 0;
     for (const Batch* batch : shown) {
-        fill_row(row++, *batch, now);
+        fill_row(row++, *batch);
     }
     table_->finish_rows();
     restore_selected_id(table_, BatchId, selected);
 }
 
-void BatchesTab::fill_row(int row, const Batch& batch, TimePoint now) {
+void BatchesTab::fill_row(int row, const Batch& batch) {
     set_cell(table_, row, BatchId, batch.id());
     set_cell(table_, row, BatchMachine, machine_name(shop_, batch.machine_id()));
     set_cell(table_, row, BatchService, qt_convert::text(display_name(batch.service_type())));
@@ -138,17 +125,19 @@ void BatchesTab::fill_row(int row, const Batch& batch, TimePoint now) {
                       batch.total_weight_kg(), true);
     set_sortable_cell(table_, row, BatchFill, qt_convert::text(format_percent(batch.fill_ratio())),
                       batch.fill_ratio(), true);
-    set_batch_time(table_, row, BatchStart, batch.effective_start_at(), batch.started_at()
-        ? QStringLiteral("Фактическое начало") : QStringLiteral("Плановое начало"));
-    const auto completed = batch.completed_at();
-    set_batch_time(table_, row, BatchEnd, batch.occupied_until(), completed
-        ? QStringLiteral("Подтверждение завершения") : QStringLiteral("Расчётный конец цикла"));
-    if (completed) {
+    const auto& projection = forecast_.batches.at(batch.id());
+    set_batch_time(table_, row, BatchStart, projection.start, batch.started_at()
+        ? QStringLiteral("Фактическое начало") : QStringLiteral("Прогноз начала"),
+        batch.planned_start_at(), projection.lower_bound);
+    set_batch_time(table_, row, BatchEnd, projection.end, batch.completed_at()
+        ? QStringLiteral("Подтверждение завершения") : QStringLiteral("Расчётный конец цикла"),
+        batch.planned_ready_at(), projection.lower_bound);
+    if (batch.completed_at()) {
         auto* end = table_->item(row, BatchEnd);
         end->setToolTip(end->toolTip() + QStringLiteral("\nРасчётный конец цикла: %1")
                                           .arg(qt_convert::format_time(batch.expected_ready_at())));
     }
-    const auto status = batch.status_at(now);
+    const auto status = projection.status;
     set_cell(table_, row, BatchStatusName, qt_convert::text(display_name(status)));
     if (table_->isColumnHidden(table_->actions_column()) || status == BatchStatus::Completed) return;
 
@@ -156,11 +145,11 @@ void BatchesTab::fill_row(int row, const Batch& batch, TimePoint now) {
     auto* actions = make_row_actions(table_, row, id);
     if (status == BatchStatus::Scheduled) {
         auto* action = add_row_action(actions, QStringLiteral("Начать обработку"), [this, id] { start(id); },
-                                      qt_convert::text(shop_.batch_start_block(id, now)));
+                                      qt_convert::text(shop_.batch_start_block(id, forecast_.now)));
         action->setAccessibleName(QStringLiteral("Начать обработку партии №%1").arg(id));
     } else {
         const QString unavailable = status == BatchStatus::InProgress
-            ? QStringLiteral("Завершить партию можно после %1.").arg(qt_convert::format_time(batch.expected_ready_at()))
+            ? QStringLiteral("Завершить партию можно после %1.").arg(qt_convert::format_time(projection.end))
             : QString();
         auto* action = add_row_action(actions, QStringLiteral("Завершить партию"), [this, id] { complete(id); }, unavailable);
         action->setAccessibleName(QStringLiteral("Завершить партию №%1").arg(id));

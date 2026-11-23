@@ -21,6 +21,7 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <memory>
 #include <utility>
 
 #include "display.h"
@@ -66,20 +67,26 @@ QString exact_time(TimePoint time) {
     return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("dd.MM.yyyy HH:mm:ss"));
 }
 
-QString batch_tooltip(const Batch& batch, TimePoint now) {
-    const auto start_label = batch.started_at() ? QStringLiteral("Фактический запуск") : QStringLiteral("Плановое начало");
+QString projected_time(const QString& time, bool lower_bound) {
+    return lower_bound ? QStringLiteral("не раньше %1").arg(time) : time;
+}
+
+QString batch_tooltip(const Batch& batch, const BatchForecast& projection) {
+    const auto start_label = batch.started_at() ? QStringLiteral("Фактический запуск") : QStringLiteral("Прогноз начала");
     const auto end_label = batch.completed_at() ? QStringLiteral("Фактическое подтверждение завершения")
-        : batch.started_at() ? QStringLiteral("Прогноз окончания цикла") : QStringLiteral("Плановое окончание");
-    return QStringLiteral("Партия №%1 · %2\n%3: %4\n%5: %6")
+                                               : QStringLiteral("Расчётный конец цикла");
+    return QStringLiteral("Партия №%1 · %2\n%3: %4\n%5: %6\nПлан: %7 - %8")
         .arg(batch.id())
-        .arg(qt_convert::text(display_name(batch.status_at(now))), start_label, exact_time(batch.effective_start_at()),
-             end_label, exact_time(batch.occupied_until()));
+        .arg(qt_convert::text(display_name(projection.status)), start_label,
+             projected_time(exact_time(projection.start), projection.lower_bound), end_label,
+             projected_time(exact_time(projection.end), projection.lower_bound),
+             exact_time(batch.planned_start_at()), exact_time(batch.planned_ready_at()));
 }
 
 class MachineTimeline final : public QGraphicsView {
 public:
-    MachineTimeline(const DryCleaningShop& shop, Id machine, QWidget* parent)
-        : QGraphicsView(parent), shop_(shop), machine_(machine) {
+    MachineTimeline(const DryCleaningShop& shop, const ShopForecast& forecast, Id machine, QWidget* parent)
+        : QGraphicsView(parent), shop_(shop), forecast_(forecast), machine_(machine) {
         setScene(new QGraphicsScene(this));
         setAlignment(Qt::AlignLeft | Qt::AlignTop);
         setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -97,6 +104,7 @@ public:
     }
 
     void on_day_selected(std::function<void(QDate)> action) { select_day_ = std::move(action); }
+    void refresh() { redraw(); }
 
 protected:
     void resizeEvent(QResizeEvent* event) override {
@@ -198,23 +206,24 @@ private:
         if (end_ <= start_) return;
 
         scene()->addRect(track(), QPen(Qt::NoPen), QBrush(QColor(kFreeTimeColor)));
-        const TimePoint now = qt_convert::now();
         for (const Batch& batch : shop_.batches()) {
             if (batch.machine_id() != machine_) continue;
-            const TimePoint start = std::max(start_, batch.effective_start_at());
-            const TimePoint end = std::min(end_, batch.occupied_until());
+            const auto& projection = forecast_.batches.at(batch.id());
+            const TimePoint start = std::max(start_, projection.start);
+            const TimePoint end = std::min(end_, projection.release);
             if (end <= start) continue;
             const auto color = batch.completed_at() ? kCompletedBatchColor
                 : batch.started_at() ? kRunningBatchColor : kScheduledBatchColor;
             auto* block = scene()->addRect(x_at(start), kTrackTop, x_at(end) - x_at(start), kTrackHeight,
                                           QPen(Qt::NoPen), QBrush(QColor(color)));
-            block->setToolTip(batch_tooltip(batch, now));
+            block->setToolTip(batch_tooltip(batch, projection));
         }
         if (weekly_) draw_week(first);
         else draw_day();
     }
 
     const DryCleaningShop& shop_;
+    const ShopForecast& forecast_;
     Id machine_;
     QDate date_;
     bool weekly_ = true;
@@ -225,16 +234,18 @@ private:
 
 }
 
-MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
+MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast& forecast, QWidget* parent)
     : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kMachineHeaders),
-               parent, true) {}
+               parent, true), forecast_(forecast) {}
+
+void MachinesTab::refresh_history() { emit forecast_changed(); }
 
 void MachinesTab::add_extra_actions(QHBoxLayout* actions, Id id) {
     add_row_action(actions, QStringLiteral("Занятость"), [this, id] { show_history(id); });
     if (is_allowed()) {
         auto* menu = add_more_actions(actions, QStringLiteral("Обслуживание машины №%1").arg(id));
         auto* service = menu->addAction(QStringLiteral("Выполнить ТО"), this, [this, id] { service_machine(id); });
-        if (!shop_.can_service_machine(id, qt_convert::now())) {
+        if (!shop_.can_service_machine(id, forecast_.now)) {
             service->setEnabled(false);
             service->setToolTip(QStringLiteral("Сначала завершите все партии машины."));
             menu->setToolTipsVisible(true);
@@ -256,37 +267,29 @@ void MachinesTab::service_machine(Id id) {
 }
 
 void MachinesTab::show_history(Id id) {
-    const Machine& machine = shop_.machines().get(id);
-    std::vector<const Batch*> history;
-    for (const Batch& batch : shop_.batches()) {
-        if (batch.machine_id() == id) history.push_back(&batch);
-    }
-    std::sort(history.begin(), history.end(), [](const Batch* left, const Batch* right) {
-        return left->effective_start_at() < right->effective_start_at();
-    });
-    QDialog dialog(this);
-    dialog.setWindowTitle(QStringLiteral("Занятость - ") + qt_convert::text(machine.name()));
-    dialog.resize(kHistoryWindowWidth, kHistoryWindowHeight);
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* modes = new QButtonGroup(&dialog);
-    auto* day_button = new QToolButton(&dialog);
+    auto* dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->resize(kHistoryWindowWidth, kHistoryWindowHeight);
+    auto* layout = new QVBoxLayout(dialog);
+    auto* modes = new QButtonGroup(dialog);
+    auto* day_button = new QToolButton(dialog);
     day_button->setText(QStringLiteral("День"));
     day_button->setCheckable(true);
     modes->addButton(day_button);
-    auto* week_button = new QToolButton(&dialog);
+    auto* week_button = new QToolButton(dialog);
     week_button->setText(QStringLiteral("Неделя"));
     week_button->setCheckable(true);
     modes->addButton(week_button);
     week_button->setChecked(true);
 
-    auto* previous = new QToolButton(&dialog);
+    auto* previous = new QToolButton(dialog);
     previous->setArrowType(Qt::LeftArrow);
-    auto* next = new QToolButton(&dialog);
+    auto* next = new QToolButton(dialog);
     next->setArrowType(Qt::RightArrow);
-    auto* today = new QToolButton(&dialog);
+    auto* today = new QToolButton(dialog);
     today->setText(QStringLiteral("Сегодня"));
-    auto* period = new QLabel(&dialog);
-    auto* day_hint = new QLabel(QStringLiteral("Нажмите на день, чтобы открыть его шкалу."), &dialog);
+    auto* period = new QLabel(dialog);
+    auto* day_hint = new QLabel(QStringLiteral("Нажмите на день, чтобы открыть его шкалу."), dialog);
     day_hint->setWordWrap(true);
     auto* date_controls = new QHBoxLayout;
     date_controls->addWidget(day_button);
@@ -299,21 +302,21 @@ void MachinesTab::show_history(Id id) {
     date_controls->addStretch();
     layout->addLayout(date_controls);
     layout->addWidget(day_hint);
-    auto* view = new MachineTimeline(shop_, id, &dialog);
+    auto* view = new MachineTimeline(shop_, forecast_, id, dialog);
     layout->addWidget(view);
     auto* legend = new QLabel(QStringLiteral(
-        "Зелёный - без партий · синий - завершена · фиолетовый - запущена · оранжевый - ожидает запуска"), &dialog);
+        "Зелёный - без партий · синий - завершена · фиолетовый - запущена · оранжевый - ожидает запуска"), dialog);
     legend->setWordWrap(true);
     layout->addWidget(legend);
 
-    QDate date = QDate::currentDate();
-    const auto update_period = [=, &date] {
+    const auto date = std::make_shared<QDate>(QDate::currentDate());
+    const auto update_period = [=] {
         const bool weekly = week_button->isChecked();
         const auto label = QStringLiteral("dd.MM.yyyy");
-        const QDate first = first_day(date, weekly);
+        const QDate first = first_day(*date, weekly);
         period->setText(weekly
             ? QStringLiteral("%1 - %2").arg(first.toString(label), first.addDays(kDaysPerWeek - 1).toString(label))
-            : date.toString(label));
+            : date->toString(label));
         const auto previous_name = weekly ? QStringLiteral("Предыдущая неделя") : QStringLiteral("Предыдущий день");
         const auto next_name = weekly ? QStringLiteral("Следующая неделя") : QStringLiteral("Следующий день");
         previous->setAccessibleName(previous_name);
@@ -321,52 +324,79 @@ void MachinesTab::show_history(Id id) {
         next->setAccessibleName(next_name);
         next->setToolTip(next_name);
         day_hint->setVisible(weekly);
-        view->set_period(date, weekly);
+        view->set_period(*date, weekly);
     };
-    const auto navigate = [week_button, &date, update_period](int direction) {
-        date = date.addDays(direction * (week_button->isChecked() ? kDaysPerWeek : 1));
+    const auto navigate = [week_button, date, update_period](int direction) {
+        *date = date->addDays(direction * (week_button->isChecked() ? kDaysPerWeek : 1));
         update_period();
     };
-    connect(modes, &QButtonGroup::buttonClicked, &dialog, update_period);
-    connect(previous, &QToolButton::clicked, &dialog, [navigate] { navigate(-1); });
-    connect(next, &QToolButton::clicked, &dialog, [navigate] { navigate(1); });
-    connect(today, &QToolButton::clicked, &dialog, [&date, update_period] {
-        date = QDate::currentDate();
+    connect(modes, &QButtonGroup::buttonClicked, dialog, update_period);
+    connect(previous, &QToolButton::clicked, dialog, [navigate] { navigate(-1); });
+    connect(next, &QToolButton::clicked, dialog, [navigate] { navigate(1); });
+    connect(today, &QToolButton::clicked, dialog, [date, update_period] {
+        *date = QDate::currentDate();
         update_period();
     });
-    view->on_day_selected([day_button, &date, update_period](QDate selected) {
-        date = selected;
+    view->on_day_selected([day_button, date, update_period](QDate selected) {
+        *date = selected;
         day_button->setChecked(true);
         update_period();
     });
     update_period();
-    auto* table = new TableWidget(make_headers(kHistoryHeaders), &dialog);
+    auto* table = new TableWidget(make_headers(kHistoryHeaders), dialog);
     table->set_empty_text(QStringLiteral("У этой машины пока нет партий."));
-    table->reset_rows(static_cast<int>(history.size()));
-    for (int row = 0; row < static_cast<int>(history.size()); ++row) {
-        const Batch& batch = *history[row];
-        set_cell(table, row, HistoryBatch, batch.id());
-        set_time_cell(table, row, HistoryStart, batch.effective_start_at());
-        set_time_cell(table, row, HistoryReady, batch.expected_ready_at());
-        set_cell(table, row, HistoryStatus, qt_convert::text(display_name(batch.status_at(qt_convert::now()))));
-        set_time_cell(table, row, HistoryCompleted, batch.completed_at());
-        table->item(row, HistoryStart)->setToolTip(batch_tooltip(batch, qt_convert::now()));
-    }
+    const auto refresh_history = [this, id, dialog, view, table] {
+        const auto* machine = shop_.machines().find_by_id(id);
+        if (!machine) {
+            dialog->close();
+            return;
+        }
+        dialog->setWindowTitle(QStringLiteral("Занятость - ") + qt_convert::text(machine->name()));
+        view->refresh();
+        const auto selected = selected_id(table, HistoryBatch);
+        std::vector<const Batch*> history;
+        for (const Batch& batch : shop_.batches()) {
+            if (batch.machine_id() == id) history.push_back(&batch);
+        }
+        std::stable_sort(history.begin(), history.end(), [this](const Batch* left, const Batch* right) {
+            return forecast_.batches.at(left->id()).start < forecast_.batches.at(right->id()).start;
+        });
+        table->reset_rows(static_cast<int>(history.size()));
+        int row = 0;
+        for (const Batch* batch : history) {
+            const auto& projection = forecast_.batches.at(batch->id());
+            set_cell(table, row, HistoryBatch, batch->id());
+            set_sortable_cell(table, row, HistoryStart, projected_time(qt_convert::format_time(projection.start),
+                             projection.lower_bound), time_sort_value(projection.start));
+            const auto end = batch->completed_at() ? batch->expected_ready_at() : projection.end;
+            set_sortable_cell(table, row, HistoryReady, projected_time(qt_convert::format_time(end),
+                             projection.lower_bound), time_sort_value(end));
+            set_cell(table, row, HistoryStatus, qt_convert::text(display_name(projection.status)));
+            set_time_cell(table, row, HistoryCompleted, batch->completed_at());
+            table->item(row, HistoryStart)->setToolTip(batch_tooltip(*batch, projection));
+            ++row;
+        }
+        table->finish_rows();
+        restore_selected_id(table, HistoryBatch, selected);
+    };
+    connect(this, &MachinesTab::forecast_changed, dialog, refresh_history);
+    refresh_history();
     layout->addWidget(table);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
     buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("Закрыть"));
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     layout->addWidget(buttons);
-    dialog.exec();
+    dialog->show();
 }
 
 void MachinesTab::fill(TableWidget* table) {
     table->reset_rows(static_cast<int>(shop_.machines().size()));
-    const TimePoint now = qt_convert::now();
     int row = 0;
     std::vector<Machine> machines(shop_.machines().begin(), shop_.machines().end());
-    std::stable_sort(machines.begin(), machines.end(), [](const Machine& left, const Machine& right) {
-        if (left.free_at() != right.free_at()) return left.free_at() < right.free_at();
+    std::stable_sort(machines.begin(), machines.end(), [this](const Machine& left, const Machine& right) {
+        const auto left_available = forecast_.machines.at(left.id()).available_at;
+        const auto right_available = forecast_.machines.at(right.id()).available_at;
+        if (left_available != right_available) return left_available < right_available;
         return QString::localeAwareCompare(qt_convert::text(left.name()), qt_convert::text(right.name())) < 0;
     });
     for (const Machine& machine : machines) {
@@ -375,11 +405,15 @@ void MachinesTab::fill(TableWidget* table) {
         set_cell(table, row, MachineType, qt_convert::text(display_name(machine.type())));
         set_sortable_cell(table, row, MachineCapacity, QString::number(machine.capacity_kg(), 'f', kCapacityDecimals),
                           machine.capacity_kg(), true);
-        const bool is_free = shop_.can_service_machine(machine.id(), now);
-        const QString availability = is_free ? QStringLiteral("Свободна") : machine.is_free_at(now)
-            ? QStringLiteral("Ожидает запуска или подтверждения") : qt_convert::format_time(machine.free_at());
+        const auto& projection = forecast_.machines.at(machine.id());
+        const QString availability = projection.awaiting_confirmation ? QStringLiteral("Ожидает подтверждения")
+            : projection.reserved ? projected_time(qt_convert::format_time(projection.available_at), true)
+                                  : QStringLiteral("Свободна");
         set_sortable_cell(table, row, MachineFreeAt, availability,
-                          time_sort_value(is_free ? std::nullopt : std::optional(machine.free_at())));
+                          time_sort_value(projection.reserved ? std::optional(projection.available_at) : std::nullopt));
+        if (projection.awaiting_confirmation) {
+            table->item(row, MachineFreeAt)->setToolTip(QStringLiteral("Занята до подтверждения завершения партии."));
+        }
         set_sortable_cell(table, row, MachineMaintenance,
                           QString::number(machine.maintenance_remaining(), 'f', kMaintenanceDecimals),
                           machine.maintenance_remaining());

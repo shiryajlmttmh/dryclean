@@ -29,6 +29,7 @@ protected:
 private slots:
     void save();
     void refresh();
+    void on_clock_timeout();
     void refresh_clock_views();
     void refresh_clients();
     void refresh_orders();
@@ -53,6 +54,7 @@ private:
 
     DryCleaningShop& shop_;
     Id employee_id_;
+    ShopForecast forecast_;
     QLineEdit* client_search_ = nullptr;
     TableWidget* clients_table_ = nullptr;
     QPushButton* add_client_button_ = nullptr;
