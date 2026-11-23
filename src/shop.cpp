@@ -341,7 +341,6 @@ void load_file(Repository<T>& repository, const std::filesystem::path& directory
 }
 
 constexpr const char* kInitialAdminName = "Администратор";
-constexpr const char* kInitialAdminLogin = "admin";
 
 using FinishingHours = std::function<Hours(const Item&, const Order&)>;
 
@@ -418,14 +417,14 @@ const Employee& DryCleaningShop::authenticate(const std::string& login, const st
 
 bool DryCleaningShop::needs_password_setup() const noexcept { return loaded_ && employees_.empty(); }
 
-Id DryCleaningShop::initialize_admin_password(const std::string& password) {
+Id DryCleaningShop::initialize_admin(std::string login, const std::string& password) {
     if (!needs_password_setup()) {
         throw InvalidInputException("password", "первичная настройка пароля недоступна");
     }
     if (revision_ == std::numeric_limits<Revision>::max()) {
         throw InvalidInputException("revision", "исчерпан счётчик изменений");
     }
-    Employee admin(kInitialAdminName, kInitialAdminLogin, EmployeeRole::Administrator);
+    Employee admin(kInitialAdminName, std::move(login), EmployeeRole::Administrator);
     admin.set_password(password);
     Repository<Employee> updated = employees_;
     const Id id = updated.add(std::move(admin));

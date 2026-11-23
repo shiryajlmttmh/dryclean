@@ -21,7 +21,6 @@ namespace {
 constexpr int kIterations = 600000;
 constexpr std::size_t kSaltBytes = 16;
 constexpr std::size_t kHashBytes = 32;
-constexpr std::size_t kMinPasswordCharacters = 8;
 constexpr std::size_t kMaxPasswordBytes = 256;
 constexpr std::size_t kHexCharsPerByte = 2;
 constexpr std::size_t kHashSeparatorLength = 1;

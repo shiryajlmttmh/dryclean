@@ -20,7 +20,7 @@ private slots:
 
 private:
     DryCleaningShop& shop_;
-    QLineEdit* login_edit_ = nullptr;
+    QLineEdit* login_edit_;
     QLineEdit* password_edit_;
     QLineEdit* confirmation_edit_ = nullptr;
     QLabel* error_label_;

@@ -199,7 +199,7 @@ std::string parse_mobile_number(std::string_view text) {
 }
 
 bool is_login_char(char c) {
-    return (c >= 'a' && c <= 'z') || is_digit(c) || c == '_' || c == '-';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || is_digit(c) || c == '_' || c == '-';
 }
 
 }
@@ -229,8 +229,7 @@ std::string normalize_login(std::string login) {
         throw InvalidInputException("login", "логин не может быть длиннее " + std::to_string(kMaxLoginLength) +
                                                  " символов");
     }
-    for (char& c : login) {
-        c = to_lower_ascii(c);
+    for (char c : login) {
         if (!is_login_char(c)) {
             throw InvalidInputException("login",
                                         "логин может содержать только латинские буквы, цифры, '_' и '-'");

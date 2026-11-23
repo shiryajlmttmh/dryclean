@@ -55,7 +55,7 @@ public:
 
     const Employee& authenticate(const std::string& login, const std::string& password) const;
     bool needs_password_setup() const noexcept;
-    Id initialize_admin_password(const std::string& password);
+    Id initialize_admin(std::string login, const std::string& password);
     void require_permission(Id employee_id, Permission permission) const;
 
     Id add_employee(Employee employee, Id acting_employee);
