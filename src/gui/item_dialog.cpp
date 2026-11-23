@@ -206,6 +206,7 @@ QWidget* ItemDialog::build_services_page() {
     controls->addWidget(add_stage_button_);
 
     stages_table_ = new TableWidget(make_headers(kStageHeaders), page, true);
+    stages_table_->set_text_columns({StageService});
     stages_table_->set_empty_text(QStringLiteral("Выберите услугу и нажмите «Добавить этап»."));
     auto* order_hint = new QLabel(QStringLiteral(
         "Этапы выполняются по номерам. В базовом порядке они показаны сверху вниз."), page);

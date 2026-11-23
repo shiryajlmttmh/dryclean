@@ -1,17 +1,19 @@
 #pragma once
 
-#include <QSet>
 #include <QStringList>
 #include <QTableWidget>
 #include <QVariant>
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <optional>
+#include <vector>
 
 #include "types.h"
 
 class QAction;
+class QEvent;
 class QHBoxLayout;
 class QMenu;
 class QToolButton;
@@ -25,6 +27,8 @@ QStringList make_headers(const std::array<const char*, N>& names) {
     return headers;
 }
 
+enum class ColumnKind { Compact, Text, WideText };
+
 class TableWidget : public QTableWidget {
 public:
     TableWidget(const QStringList& headers, QWidget* parent, bool has_actions = false);
@@ -33,16 +37,29 @@ public:
     void finish_rows();
     void reset_sort();
     void set_empty_text(const QString& text);
-    void fit_full_column_contents(int column);
+    void set_text_columns(std::initializer_list<int> columns, ColumnKind kind = ColumnKind::Text);
+    void reserve_column_text(int column, const QStringList& samples);
     int actions_column() const noexcept;
 
 protected:
+    bool viewportEvent(QEvent* event) override;
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     int sizeHintForColumn(int column) const override;
 
 private:
     void cycle_sort(int column);
+    void measure_columns();
+    void layout_columns();
+
+    struct ColumnMetrics {
+        ColumnKind kind = ColumnKind::Compact;
+        QStringList samples;
+        int minimum = 0;
+        int preferred = 0;
+        int maximum = 0;
+    };
 
     struct FocusedAction {
         Id id;
@@ -54,7 +71,8 @@ private:
     Qt::SortOrder sort_order_ = Qt::DescendingOrder;
     int actions_column_ = kNoColumn;
     QString empty_text_;
-    QSet<int> full_content_columns_;
+    std::vector<ColumnMetrics> columns_;
+    bool layout_pending_ = false;
 };
 
 void set_cell(TableWidget* table, int row, int column, const QString& text, bool right_aligned = false);

@@ -17,7 +17,8 @@ constexpr std::array<const char*, EmployeeColumnCount> kEmployeeHeaders{"№", "
 }
 
 EmployeesTab::EmployeesTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kEmployeeHeaders), parent) {}
+    : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kEmployeeHeaders),
+               {EmployeeName, EmployeeLogin}, parent) {}
 
 void EmployeesTab::fill(TableWidget* table) {
     table->reset_rows(static_cast<int>(shop_.employees().size()));

@@ -96,6 +96,8 @@ QWidget* OrderDialog::build_items_box() {
     auto* add_button = new QPushButton(QStringLiteral("Добавить изделие"), box);
     layout->addWidget(add_button, 0, Qt::AlignLeft);
     items_table_ = new TableWidget(make_headers(kItemHeaders), box, true);
+    items_table_->set_text_columns({ItemKind, ItemMaterial});
+    items_table_->set_text_columns({ItemService}, ColumnKind::WideText);
     items_table_->set_empty_text(QStringLiteral("Нажмите «Добавить изделие», чтобы заполнить заказ."));
     layout->addWidget(items_table_);
 

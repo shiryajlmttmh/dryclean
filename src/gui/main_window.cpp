@@ -154,6 +154,7 @@ QWidget* MainWindow::build_clients_tab() {
     layout->addWidget(client_search_);
 
     clients_table_ = new TableWidget(make_headers(kClientHeaders), page, true);
+    clients_table_->set_text_columns({ClientName});
     layout->addWidget(clients_table_);
 
     connect(client_search_, &QLineEdit::textChanged, this, &MainWindow::refresh_clients);
@@ -193,6 +194,8 @@ QWidget* MainWindow::build_orders_tab() {
     layout->addLayout(filters);
 
     orders_table_ = new TableWidget(make_headers(kOrderHeaders), page, true);
+    orders_table_->set_text_columns({OrderClient, OrderReady});
+    orders_table_->set_text_columns({OrderService}, ColumnKind::WideText);
     layout->addWidget(orders_table_);
 
     connect(order_filters_, &QButtonGroup::idToggled, this, [this](int, bool checked) {
@@ -386,6 +389,7 @@ void MainWindow::show_order_history(Id id) {
     auto* layout = new QVBoxLayout(&dialog);
     auto* table = new TableWidget({QStringLiteral("Дата и время"), QStringLiteral("Статус"),
                                    QStringLiteral("Сотрудник")}, &dialog);
+    table->set_text_columns({HistoryEmployee});
     const auto& history = shop_.orders().get(id).history();
     table->reset_rows(static_cast<int>(history.size()));
     int row = 0;

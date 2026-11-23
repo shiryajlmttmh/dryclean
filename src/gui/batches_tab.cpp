@@ -19,6 +19,8 @@
 namespace {
 
 constexpr int kWeightDecimals = 2;
+constexpr auto kTimestampWidthSample = "88.88.8888 88:88";
+constexpr auto kCountdownWidthSample = std::chrono::hours(88) + std::chrono::minutes(58);
 enum BatchFilter { Unfinished, Completed, AllBatches };
 constexpr int kAllStages = -1;
 
@@ -54,9 +56,9 @@ QString format_batch_time(TimePoint time, int current_year) {
                                                               : QStringLiteral("dd.MM.yyyy HH:mm"));
 }
 
-QString format_countdown(TimePoint end, TimePoint now) {
+QString format_countdown(std::chrono::milliseconds remaining) {
     using namespace std::chrono;
-    const auto total_minutes = duration_cast<minutes>(end - now);
+    const auto total_minutes = duration_cast<minutes>(remaining);
     if (total_minutes == minutes::zero()) return QStringLiteral("Осталось меньше минуты");
     const auto whole_hours = duration_cast<hours>(total_minutes);
     const auto remaining_minutes = total_minutes - whole_hours;
@@ -65,11 +67,17 @@ QString format_countdown(TimePoint end, TimePoint now) {
     return QStringLiteral("Осталось %1 ч %2 мин").arg(whole_hours.count()).arg(remaining_minutes.count());
 }
 
+QString earliest_batch_time(const QString& date) { return QStringLiteral("Не раньше %1").arg(date); }
+
+QString batch_time_with_countdown(const QString& date, const QString& countdown) {
+    return QStringLiteral("%1 · %2").arg(countdown, date);
+}
+
 void set_batch_time(TableWidget* table, int row, int column, TimePoint time, const QString& kind, TimePoint planned,
                     int current_year, bool lower_bound, const QString& countdown = {}) {
     const auto date = format_batch_time(time, current_year);
-    const auto moment = lower_bound ? QStringLiteral("Не раньше %1").arg(date) : date;
-    const auto displayed = countdown.isEmpty() ? moment : QStringLiteral("%1 · %2").arg(countdown, moment);
+    const auto moment = lower_bound ? earliest_batch_time(date) : date;
+    const auto displayed = countdown.isEmpty() ? moment : batch_time_with_countdown(moment, countdown);
     set_sortable_cell(table, row, column, displayed, time_sort_value(time));
     table->item(row, column)->setToolTip(QStringLiteral("%1: %2\nПо плану: %3")
         .arg(kind, moment, format_batch_time(planned, current_year)));
@@ -93,8 +101,14 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast
     read_only_hint_ = new QLabel(QStringLiteral("Для запуска и завершения партий нужны права оператора."), this);
     read_only_hint_->setWordWrap(true);
     table_ = new TableWidget(make_headers(kBatchHeaders), this, true);
-    table_->fit_full_column_contents(BatchStart);
-    table_->fit_full_column_contents(BatchEnd);
+    table_->set_text_columns({BatchMachine, BatchService, BatchItems});
+    const auto timestamp_sample = QString::fromLatin1(kTimestampWidthSample);
+    table_->reserve_column_text(BatchStart, {earliest_batch_time(timestamp_sample)});
+    table_->reserve_column_text(BatchEnd, {
+        batch_time_with_countdown(timestamp_sample, format_countdown(kCountdownWidthSample)),
+        batch_time_with_countdown(timestamp_sample, format_countdown(std::chrono::seconds(1)))
+    });
+    table_->reserve_column_text(BatchStatusName, {qt_convert::text(display_name(BatchStatus::AwaitingConfirmation))});
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(filter_tabs_);
     layout->addWidget(stage_filter_, 0, Qt::AlignLeft);
@@ -158,7 +172,7 @@ void BatchesTab::fill_row(int row, const Batch& batch, int current_year) {
     set_batch_time(table_, row, BatchStart, projection.start, batch.started_at()
         ? QStringLiteral("Фактическое начало") : QStringLiteral("Прогноз начала"),
         batch.planned_start_at(), current_year, projection.lower_bound);
-    const auto countdown = status == BatchStatus::InProgress ? format_countdown(projection.end, forecast_.now) : QString();
+    const auto countdown = status == BatchStatus::InProgress ? format_countdown(projection.end - forecast_.now) : QString();
     set_batch_time(table_, row, BatchEnd, projection.end, batch.completed_at()
         ? QStringLiteral("Подтверждение завершения") : QStringLiteral("Расчётный конец цикла"),
         batch.planned_ready_at(), current_year, projection.lower_bound, countdown);

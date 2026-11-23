@@ -246,7 +246,7 @@ private:
 
 MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast& forecast, QWidget* parent)
     : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kMachineHeaders),
-               parent, true), forecast_(forecast) {}
+               {MachineName}, parent, true), forecast_(forecast) {}
 
 void MachinesTab::refresh_history() { emit forecast_changed(); }
 
@@ -356,6 +356,7 @@ void MachinesTab::show_history(Id id) {
     });
     update_period();
     auto* table = new TableWidget(make_headers(kHistoryHeaders), dialog);
+    table->set_text_columns({HistoryStatus});
     table->set_empty_text(QStringLiteral("У этой машины пока нет партий."));
     const auto refresh_history = [this, id, dialog, view, table] {
         const auto* machine = shop_.machines().find_by_id(id);

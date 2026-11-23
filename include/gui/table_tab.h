@@ -2,6 +2,7 @@
 
 #include <QStringList>
 #include <QWidget>
+#include <initializer_list>
 
 #include "shop.h"
 
@@ -16,7 +17,7 @@ class TableTab : public QWidget {
 
 public:
     TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-             QWidget* parent, bool has_view_actions = false);
+             std::initializer_list<int> text_columns, QWidget* parent, bool has_view_actions = false);
 
 public slots:
     void refresh();

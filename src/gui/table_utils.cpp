@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QEvent>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -10,6 +11,8 @@
 #include <QPainter>
 #include <QStyle>
 #include <QStyleOptionHeader>
+#include <QStyleOptionViewItem>
+#include <QTimer>
 #include <QToolButton>
 #include <algorithm>
 
@@ -19,7 +22,12 @@ namespace {
 
 constexpr int kBaseRowRole = Qt::UserRole + 1;
 constexpr int kSortValueRole = Qt::UserRole + 2;
-constexpr int kMaxDataCellWidth = 180;
+constexpr int kCompactMinCharacters = 4;
+constexpr int kCompactMaxCharacters = 27;
+constexpr int kTextMinCharacters = 13;
+constexpr int kTextMaxCharacters = 34;
+constexpr int kWideTextMinCharacters = 17;
+constexpr int kWideTextMaxCharacters = 48;
 constexpr int kMeasureAllRows = -1;
 constexpr int kEditIconSize = 16;
 constexpr qreal kEditIconStrokeWidth = 1.3;
@@ -39,9 +47,23 @@ constexpr int kActionSpacing = 4;
 constexpr auto kActionReasonName = "actionReason";
 constexpr auto kRecordIdProperty = "recordId";
 
+struct ColumnLimits {
+    int minimum;
+    int maximum;
+};
+
+ColumnLimits character_limits(ColumnKind kind) {
+    switch (kind) {
+        case ColumnKind::Compact: return {kCompactMinCharacters, kCompactMaxCharacters};
+        case ColumnKind::WideText: return {kWideTextMinCharacters, kWideTextMaxCharacters};
+        default: return {kTextMinCharacters, kTextMaxCharacters};
+    }
+}
+
 class TableHeader : public QHeaderView {
 public:
-    explicit TableHeader(QWidget* parent) : QHeaderView(Qt::Horizontal, parent) {}
+    TableHeader(QWidget* parent, int actions_column)
+        : QHeaderView(Qt::Horizontal, parent), actions_column_(actions_column) {}
 
 protected:
     QSize sectionSizeFromContents(int column) const override {
@@ -49,8 +71,12 @@ protected:
         QStyleOptionHeader option;
         initStyleOption(&option);
         initStyleOptionForIndex(&option, column);
+        if (column != actions_column_) option.sortIndicator = QStyleOptionHeader::SortDown;
         return style()->sizeFromContents(QStyle::CT_HeaderSection, &option, {}, this);
     }
+
+private:
+    int actions_column_;
 };
 
 class TableItem : public QTableWidgetItem {
@@ -129,7 +155,8 @@ TableWidget::TableWidget(const QStringList& headers, QWidget* parent, bool has_a
         actions_column_ = static_cast<int>(labels.size());
         labels << QStringLiteral("Действия");
     }
-    auto* header = new TableHeader(this);
+    columns_.resize(static_cast<std::size_t>(labels.size()));
+    auto* header = new TableHeader(this, actions_column_);
     setHorizontalHeader(header);
     setColumnCount(static_cast<int>(labels.size()));
     setHorizontalHeaderLabels(labels);
@@ -147,9 +174,10 @@ TableWidget::TableWidget(const QStringList& headers, QWidget* parent, bool has_a
     header->setSectionsClickable(true);
     header->setStretchLastSection(false);
     header->setResizeContentsPrecision(kMeasureAllRows);
-    header->setSectionResizeMode(QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(QHeaderView::Fixed);
     header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     connect(header, &QHeaderView::sectionClicked, this, &TableWidget::cycle_sort);
+    measure_columns();
 }
 
 void TableWidget::reset_rows(int count) {
@@ -171,7 +199,7 @@ void TableWidget::finish_rows() {
     if (sort_column_ >= 0) {
         sortItems(sort_column_, sort_order_);
     }
-    resizeColumnsToContents();
+    measure_columns();
     if (!focused_action_) return;
     const FocusedAction focus = *focused_action_;
     focused_action_.reset();
@@ -195,8 +223,107 @@ void TableWidget::set_empty_text(const QString& text) {
     viewport()->update();
 }
 
-void TableWidget::fit_full_column_contents(int column) {
-    full_content_columns_.insert(column);
+void TableWidget::set_text_columns(std::initializer_list<int> columns, ColumnKind kind) {
+    for (int column : columns) columns_.at(column).kind = kind;
+    measure_columns();
+}
+
+void TableWidget::reserve_column_text(int column, const QStringList& samples) {
+    columns_.at(column).samples = samples;
+    measure_columns();
+}
+
+void TableWidget::measure_columns() {
+    auto* header = horizontalHeader();
+    const auto metrics = fontMetrics();
+    const int char_width = metrics.averageCharWidth();
+    QStyleOptionViewItem option;
+    initViewItemOption(&option);
+    option.features = QStyleOptionViewItem::HasDisplay;
+    const auto cell_width = [this, &option](const QString& sample) {
+        option.text = sample;
+        return style()->sizeFromContents(QStyle::CT_ItemViewItem, &option, {}, this).width() +
+               (showGrid() ? kGridLineWidth : 0);
+    };
+
+    for (int column = 0; column < columnCount(); ++column) {
+        if (isColumnHidden(column)) continue;
+        auto& widths = columns_[column];
+        const int heading = header->sectionSizeHint(column);
+        const int contents = sizeHintForColumn(column);
+        if (column == actions_column_) {
+            widths.minimum = widths.preferred = widths.maximum = std::max(heading, contents);
+            continue;
+        }
+
+        const auto limits = character_limits(widths.kind);
+        int minimum = std::max(heading, limits.minimum * char_width);
+        for (const auto& sample : widths.samples) minimum = std::max(minimum, cell_width(sample));
+        const int maximum = std::max(minimum, limits.maximum * char_width);
+        const int preferred = std::clamp(contents, minimum, maximum);
+        widths.preferred = preferred;
+        widths.minimum = widths.kind == ColumnKind::Compact ? preferred : minimum;
+        widths.maximum = widths.kind == ColumnKind::Compact ? preferred : maximum;
+    }
+    layout_columns();
+}
+
+void TableWidget::layout_columns() {
+    auto* header = horizontalHeader();
+    std::vector<int> widths(columns_.size());
+    int room = viewport()->width();
+    for (int column = 0; column < columnCount(); ++column) {
+        if (isColumnHidden(column)) continue;
+        widths[column] = columns_[column].preferred;
+        room -= widths[column];
+    }
+
+    const bool grow = room >= 0;
+    int remaining = grow ? room : -room;
+    const auto capacity = [&](int column) {
+        if (isColumnHidden(column)) return 0;
+        return grow ? columns_[column].maximum - widths[column] : widths[column] - columns_[column].minimum;
+    };
+    while (remaining > 0) {
+        int adjustable = 0;
+        for (int column = 0; column < columnCount(); ++column) {
+            if (capacity(column) > 0) ++adjustable;
+        }
+        if (adjustable == 0) break;
+
+        const int share = std::max(1, remaining / adjustable);
+        for (int column = 0; column < columnCount() && remaining > 0; ++column) {
+            const int amount = std::min({share, remaining, capacity(column)});
+            widths[column] += grow ? amount : -amount;
+            remaining -= amount;
+        }
+    }
+
+    for (int column = 0; column < columnCount(); ++column) {
+        if (widths[column] > 0 && widths[column] != columnWidth(column)) {
+            header->resizeSection(column, widths[column]);
+        }
+    }
+}
+
+bool TableWidget::viewportEvent(QEvent* event) {
+    const bool handled = QTableWidget::viewportEvent(event);
+    if (event->type() == QEvent::Resize && !layout_pending_) {
+        layout_pending_ = true;
+        QTimer::singleShot(0, this, [this] {
+            layout_pending_ = false;
+            layout_columns();
+        });
+    }
+    return handled;
+}
+
+void TableWidget::changeEvent(QEvent* event) {
+    QTableWidget::changeEvent(event);
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+        event->type() == QEvent::StyleChange) {
+        measure_columns();
+    }
 }
 
 int TableWidget::actions_column() const noexcept { return actions_column_; }
@@ -226,8 +353,7 @@ void TableWidget::cycle_sort(int column) {
 
 int TableWidget::sizeHintForColumn(int column) const {
     if (column != actions_column_) {
-        const int width = QTableWidget::sizeHintForColumn(column);
-        return full_content_columns_.contains(column) ? width : std::min(width, kMaxDataCellWidth);
+        return QTableWidget::sizeHintForColumn(column);
     }
 
     int width = 0;
@@ -246,7 +372,7 @@ void TableWidget::paintEvent(QPaintEvent* event) {
         painter.setPen(palette().color(QPalette::Text));
         painter.drawText(viewport()->rect().adjusted(kEmptyTextHorizontalInset, kEmptyTextVerticalInset,
                                                      -kEmptyTextHorizontalInset, -kEmptyTextVerticalInset),
-                         Qt::AlignCenter | Qt::TextWordWrap, empty_text_);
+                         Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, empty_text_);
     }
 }
 
@@ -301,7 +427,7 @@ QHBoxLayout* make_row_actions(TableWidget* table, int row, Id id) {
     layout->setContentsMargins(kActionHorizontalMargin, kActionVerticalMargin,
                                kActionHorizontalMargin, kActionVerticalMargin);
     layout->setSpacing(kActionSpacing);
-    layout->setAlignment(Qt::AlignRight);
+    layout->setAlignment(Qt::AlignLeft);
     table->setCellWidget(row, table->actions_column(), panel);
     return layout;
 }

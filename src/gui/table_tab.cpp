@@ -11,13 +11,14 @@
 #include "gui/table_utils.h"
 
 TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-                   QWidget* parent, bool has_view_actions)
+                   std::initializer_list<int> text_columns, QWidget* parent, bool has_view_actions)
     : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission),
       has_view_actions_(has_view_actions) {
     add_button_ = new QPushButton(QStringLiteral("Добавить"), this);
     read_only_hint_ = new QLabel(QStringLiteral("Только просмотр. У вашей роли нет прав на изменения."), this);
     read_only_hint_->setWordWrap(true);
     table_ = new TableWidget(headers, this, true);
+    table_->set_text_columns(text_columns);
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(add_button_, 0, Qt::AlignLeft);

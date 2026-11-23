@@ -140,8 +140,11 @@ PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     details_ = details;
     details->setMaximumHeight(kDetailsMaxHeight);
     conflicts_table_ = new TableWidget(make_headers(kConflictHeaders), details);
+    conflicts_table_->set_text_columns({ConflictFirst, ConflictSecond});
+    conflicts_table_->set_text_columns({ConflictReasons}, ColumnKind::WideText);
     conflicts_table_->set_empty_text(QStringLiteral("Конфликтов между изделиями нет."));
     forecasts_table_ = new TableWidget(make_headers(kForecastHeaders), details);
+    forecasts_table_->set_text_columns({ForecastVerdict});
     forecasts_table_->set_empty_text(QStringLiteral("Нет заказов для расчёта прогноза."));
     details->addTab(conflicts_table_, QStringLiteral("Конфликты изделий"));
     details->addTab(forecasts_table_, QStringLiteral("Прогнозы по заказам"));

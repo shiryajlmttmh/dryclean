@@ -49,7 +49,8 @@ QString services_text(const Material& material) {
 }
 
 MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
-    : TableTab(shop, employee_id, Permission::ManageStock, make_headers(kMaterialHeaders), parent) {
+    : TableTab(shop, employee_id, Permission::ManageStock, make_headers(kMaterialHeaders),
+               {MaterialName, MaterialServices}, parent) {
     search_edit_ = new QLineEdit(this);
     search_edit_->setPlaceholderText(QStringLiteral("Поиск по названию"));
     search_edit_->setClearButtonEnabled(true);
