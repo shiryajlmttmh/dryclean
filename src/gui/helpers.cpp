@@ -3,7 +3,9 @@
 #include <QAbstractButton>
 #include <QDoubleSpinBox>
 #include <QGroupBox>
+#include <QLabel>
 #include <QMessageBox>
+#include <QPalette>
 #include <QStringList>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -15,6 +17,9 @@
 namespace {
 
 constexpr int kNoRow = -1;
+constexpr int kDarkBackgroundLightnessThreshold = 128;
+constexpr auto kErrorStyleOnDark = "color: #ff8585;";
+constexpr auto kErrorStyleOnLight = "color: #a00020;";
 constexpr const char* kUnknown = "?";
 constexpr const char* kTagSeparator = ", ";
 
@@ -29,6 +34,23 @@ bool run_guarded(QWidget* parent, const std::function<void()>& action) {
     } catch (const std::exception& error) {
         QMessageBox::critical(parent, QStringLiteral("Непредвиденная ошибка"), qt_convert::text(error.what()));
     }
+    return false;
+}
+
+void style_error_label(QLabel* label) {
+    const bool dark_background = label->palette().color(QPalette::Window).lightness() < kDarkBackgroundLightnessThreshold;
+    label->setStyleSheet(dark_background ? kErrorStyleOnDark : kErrorStyleOnLight);
+    label->setTextFormat(Qt::PlainText);
+    label->setWordWrap(true);
+}
+
+void show_action_refusal(QWidget* parent, const QString& reason) {
+    QMessageBox::warning(parent, QStringLiteral("Действие недоступно"), reason);
+}
+
+bool check_action_permission(QWidget* parent, const DryCleaningShop& shop, Id employee_id, Permission permission) {
+    if (has_permission(shop, employee_id, permission)) return true;
+    show_action_refusal(parent, QStringLiteral("У вашей роли нет прав для этого действия."));
     return false;
 }
 

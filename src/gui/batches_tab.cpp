@@ -1,6 +1,7 @@
 #include "gui/batches_tab.h"
 
 #include <QComboBox>
+#include <QLabel>
 #include <QSignalBlocker>
 #include <QTabBar>
 #include <QToolButton>
@@ -69,10 +70,13 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast
     for (BatchStatus stage : {BatchStatus::Scheduled, BatchStatus::InProgress, BatchStatus::AwaitingConfirmation}) {
         stage_filter_->addItem(qt_convert::text(display_name(stage)), static_cast<int>(stage));
     }
+    read_only_hint_ = new QLabel(QStringLiteral("Для запуска и завершения партий нужны права оператора."), this);
+    read_only_hint_->setWordWrap(true);
     table_ = new TableWidget(make_headers(kBatchHeaders), this, true);
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(filter_tabs_);
     layout->addWidget(stage_filter_, 0, Qt::AlignLeft);
+    layout->addWidget(read_only_hint_);
     layout->addWidget(table_);
 
     connect(filter_tabs_, &QTabBar::currentChanged, this, &BatchesTab::refresh);
@@ -104,8 +108,9 @@ void BatchesTab::refresh() {
     const bool has_unfinished = std::any_of(shown.begin(), shown.end(), [](const Batch* batch) {
         return batch->status() != BatchStatus::Completed;
     });
-    table_->setColumnHidden(table_->actions_column(),
-                            !has_unfinished || !has_permission(shop_, employee_id_, Permission::ChangeStatus));
+    const bool may_process = has_permission(shop_, employee_id_, Permission::ChangeStatus);
+    table_->setColumnHidden(table_->actions_column(), !has_unfinished || !may_process);
+    read_only_hint_->setVisible(!may_process && filter != Completed);
     table_->reset_rows(static_cast<int>(shown.size()));
     int row = 0;
     for (const Batch* batch : shown) {
@@ -149,7 +154,7 @@ void BatchesTab::fill_row(int row, const Batch& batch) {
         action->setAccessibleName(QStringLiteral("Начать обработку партии №%1").arg(id));
     } else {
         const QString unavailable = status == BatchStatus::InProgress
-            ? QStringLiteral("Завершить партию можно после %1.").arg(qt_convert::format_time(projection.end))
+            ? QStringLiteral("Конец цикла в %1.").arg(qt_convert::format_time(projection.end))
             : QString();
         auto* action = add_row_action(actions, QStringLiteral("Завершить партию"), [this, id] { complete(id); }, unavailable);
         action->setAccessibleName(QStringLiteral("Завершить партию №%1").arg(id));

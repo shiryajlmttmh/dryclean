@@ -132,7 +132,10 @@ void MainWindow::build_menu() {
     QMenu* view_menu = menuBar()->addMenu(QStringLiteral("Вид"));
     QAction* refresh_action = view_menu->addAction(QStringLiteral("Обновить"));
     refresh_action->setShortcut(QKeySequence::Refresh);
-    connect(refresh_action, &QAction::triggered, this, &MainWindow::refresh);
+    connect(refresh_action, &QAction::triggered, this, [this] {
+        refresh();
+        statusBar()->showMessage(QStringLiteral("Данные на экране обновлены."), kStatusMessageDurationMs);
+    });
 }
 
 QWidget* MainWindow::build_clients_tab() {
@@ -141,6 +144,9 @@ QWidget* MainWindow::build_clients_tab() {
 
     add_client_button_ = new QPushButton(QStringLiteral("Добавить"), page);
     layout->addWidget(add_client_button_, 0, Qt::AlignLeft);
+    clients_read_only_hint_ = new QLabel(QStringLiteral("Для изменения списка клиентов нужны права приёмщика."), page);
+    clients_read_only_hint_->setWordWrap(true);
+    layout->addWidget(clients_read_only_hint_);
     client_search_ = new QLineEdit(page);
     client_search_->setPlaceholderText(QStringLiteral("Поиск по имени или телефону"));
     client_search_->setAccessibleName(QStringLiteral("Поиск клиентов"));
@@ -197,7 +203,9 @@ QWidget* MainWindow::build_orders_tab() {
 }
 
 void MainWindow::save() {
-    run_guarded(this, [this] { shop_.save_all(); });
+    if (run_guarded(this, [this] { shop_.save_all(); })) {
+        statusBar()->showMessage(QStringLiteral("Данные сохранены."), kStatusMessageDurationMs);
+    }
     update_status();
 }
 
@@ -233,6 +241,7 @@ void MainWindow::refresh_clients() {
         const auto id = selected_id(clients_table_, ClientId);
         const bool allowed = has_permission(shop_, employee_id_, Permission::ManageClients);
         add_client_button_->setVisible(allowed);
+        clients_read_only_hint_->setVisible(!allowed);
         clients_table_->setColumnHidden(clients_table_->actions_column(), !allowed);
         const QSignalBlocker blocker(clients_table_);
         std::vector<Client> found = shop_.search_clients(client_search_->text().toStdString());
@@ -341,9 +350,9 @@ void MainWindow::fill_order_actions(int row, const Order& order, TimePoint now) 
         const auto completed_at = shop_.order_processing_completed_at(id);
         QString unavailable;
         if (!completed_at) {
-            unavailable = QStringLiteral("Завершите все этапы изделий заказа на вкладке «Партии».");
+            unavailable = QStringLiteral("Завершите этапы во вкладке «Партии».");
         } else if (now < *completed_at) {
-            unavailable = QStringLiteral("Отметить готовым можно после %1.").arg(qt_convert::format_time(*completed_at));
+            unavailable = QStringLiteral("Готовность доступна после %1.").arg(qt_convert::format_time(*completed_at));
         }
         add_row_action(actions, QStringLiteral("Отметить готовым"), [this, id] { mark_order_ready(id); }, unavailable);
     } else if (order.status() == OrderStatus::Ready && has_permission(shop_, employee_id_, Permission::IssueOrders)) {
@@ -409,6 +418,12 @@ void MainWindow::issue_order(Id id) {
 }
 
 void MainWindow::remove_order(Id id) {
+    if (!check_action_permission(this, shop_, employee_id_, Permission::AcceptOrders)) return;
+    if (!shop_.is_order_editable(id)) {
+        show_action_refusal(this, QStringLiteral("Удалить заказ можно до передачи в обработку."));
+        refresh();
+        return;
+    }
     const QString question = QStringLiteral("Удалить заказ №%1 вместе с его изделиями?").arg(id);
     if (!confirm(this, QStringLiteral("Удаление заказа"), question)) {
         return;
@@ -420,6 +435,7 @@ void MainWindow::remove_order(Id id) {
 }
 
 void MainWindow::accept_order() {
+    if (!check_action_permission(this, shop_, employee_id_, Permission::AcceptOrders)) return;
     OrderDialog dialog(shop_, employee_id_, this);
     if (dialog.exec() != QDialog::Accepted) {
         return;
@@ -430,6 +446,7 @@ void MainWindow::accept_order() {
 }
 
 void MainWindow::add_client() {
+    if (!check_action_permission(this, shop_, employee_id_, Permission::ManageClients)) return;
     ClientDialog dialog(
         shop_,         QStringLiteral("Новый клиент"), QString(), QString(), kNoDiscount,
         [this](const QString& name, const QString& phone, double discount) {
@@ -442,9 +459,7 @@ void MainWindow::add_client() {
 }
 
 void MainWindow::edit_client(Id id) {
-    if (!has_permission(shop_, employee_id_, Permission::ManageClients)) {
-        return;
-    }
+    if (!check_action_permission(this, shop_, employee_id_, Permission::ManageClients)) return;
     const Client current = shop_.clients().get(id);
     ClientDialog dialog(
         shop_,         QStringLiteral("Изменение клиента"), qt_convert::text(current.name()), qt_convert::text(format_phone(current.phone())),
@@ -463,6 +478,12 @@ void MainWindow::edit_client(Id id) {
 }
 
 void MainWindow::remove_client(Id id) {
+    if (!check_action_permission(this, shop_, employee_id_, Permission::ManageClients)) return;
+    if (!shop_.can_remove_client(id)) {
+        show_action_refusal(this, QStringLiteral("Нельзя удалить клиента, пока у него есть заказы."));
+        refresh_clients();
+        return;
+    }
     const QString name = qt_convert::text(shop_.clients().get(id).name());
     if (!confirm(this, QStringLiteral("Удаление клиента"), QStringLiteral("Удалить клиента «%1»?").arg(name))) {
         return;

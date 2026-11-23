@@ -50,8 +50,7 @@ LoginDialog::LoginDialog(DryCleaningShop& shop, QWidget* parent) : QDialog(paren
     }
 
     error_label_ = new QLabel(this);
-    error_label_->setStyleSheet(kErrorStyle);
-    error_label_->setWordWrap(true);
+    style_error_label(error_label_);
     layout->addWidget(error_label_);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -77,14 +76,12 @@ Id LoginDialog::employee_id() const noexcept { return employee_id_; }
 void LoginDialog::try_login() {
     try {
         const auto login = login_edit_->text().toStdString();
-        const auto password = password_edit_->text().toStdString();
+        const auto value = password_edit_->text().toStdString();
         if (confirmation_edit_) {
-            if (password_edit_->text() != confirmation_edit_->text()) {
-                throw InvalidInputException("password", "пароли не совпадают");
-            }
-            employee_id_ = shop_.initialize_admin(login, password);
+            password::check_confirmation(value, confirmation_edit_->text().toStdString());
+            employee_id_ = shop_.initialize_admin(login, value);
         } else {
-            employee_id_ = shop_.authenticate(login, password).id();
+            employee_id_ = shop_.authenticate(login, value).id();
         }
         password_edit_->clear();
         if (confirmation_edit_) confirmation_edit_->clear();

@@ -117,7 +117,12 @@ void OrderItemsDialog::refresh() {
 }
 
 void OrderItemsDialog::edit_item(Id id) {
-    if (!can_edit()) return;
+    if (!check_action_permission(this, shop_, employee_id_, Permission::AcceptOrders)) return;
+    if (!shop_.is_order_editable(order_id_)) {
+        show_action_refusal(this, QStringLiteral("Изделия можно изменить до передачи заказа в обработку."));
+        refresh();
+        return;
+    }
     ItemDialog dialog(shop_, shop_.items().get(id), QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() != QDialog::Accepted) {
         return;

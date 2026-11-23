@@ -1,5 +1,7 @@
 #include "shop.h"
 
+#include "password.h"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -447,6 +449,7 @@ Revision DryCleaningShop::revision() const noexcept { return revision_; }
 bool DryCleaningShop::is_dirty() const noexcept { return dirty_; }
 
 const Employee& DryCleaningShop::authenticate(const std::string& login, const std::string& password) const {
+    password::check_length(password);
     const std::string key = normalize_login(login);
     for (const Employee& employee : employees_) {
         if (employee.login() == key && employee.check_password(password)) {
@@ -662,7 +665,7 @@ bool DryCleaningShop::can_remove_client(Id client_id) const {
 void DryCleaningShop::remove_client(Id client_id, Id acting_employee) {
     begin_mutation(acting_employee, Permission::ManageClients);
     if (!can_remove_client(client_id)) {
-        throw InvalidInputException("client", "нельзя удалить клиента, у которого есть заказы");
+        throw InvalidInputException("client", "Нельзя удалить клиента, пока у него есть заказы.");
     }
     Repository<Client> copy = clients_;
     copy.remove(client_id);
@@ -1379,24 +1382,24 @@ std::string DryCleaningShop::batch_start_block(Id batch_id, TimePoint now) const
     for (const Batch& other : batches_) {
         if (other.machine_id() != batch.machine_id()) continue;
         if (other.status() == BatchStatus::InProgress) {
-            return "Сначала подтвердите завершение партии №" + std::to_string(other.id()) + ".";
+            return "Подтвердите завершение партии №" + std::to_string(other.id()) + ".";
         }
         if (other.id() < batch.id() && other.status() == BatchStatus::Scheduled) {
-            return "Перед этой партией в очереди есть партия №" + std::to_string(other.id()) + ".";
+            return "Сначала запустите партию №" + std::to_string(other.id()) + ".";
         }
         if (other.completed_at() && now < *other.completed_at()) {
-            return "Время запуска должно быть не раньше подтверждения предыдущей партии.";
+            return "Ожидайте времени подтверждения предыдущей партии.";
         }
     }
     for (Id id : batch.item_ids()) {
         const Item& item = items_.get(id);
         const auto& previous = item.completed_batches();
         if (!previous.empty() && now < *batches_.get(previous.back()).completed_at()) {
-            return "Время запуска должно быть не раньше завершения предыдущего этапа изделия.";
+            return "Ожидайте времени завершения предыдущего этапа.";
         }
         const auto& history = orders_.get(item.order_id()).history();
         if (now < history.back().timestamp()) {
-            return "Проверьте часы компьютера. Время запуска раньше последнего изменения статуса заказа.";
+            return "Запуск раньше изменения статуса заказа. Проверьте часы.";
         }
     }
     return {};

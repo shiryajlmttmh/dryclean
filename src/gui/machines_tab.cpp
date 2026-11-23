@@ -256,9 +256,7 @@ void MachinesTab::add_extra_actions(QHBoxLayout* actions, Id id) {
         auto* menu = add_more_actions(actions, QStringLiteral("Обслуживание машины №%1").arg(id));
         auto* service = menu->addAction(QStringLiteral("Выполнить ТО"), this, [this, id] { service_machine(id); });
         if (!shop_.can_service_machine(id, forecast_.now)) {
-            service->setEnabled(false);
-            service->setToolTip(QStringLiteral("Сначала завершите все партии машины."));
-            menu->setToolTipsVisible(true);
+            set_menu_action_unavailable(service, QStringLiteral("сначала завершите все партии машины"));
         }
     }
 }
@@ -268,7 +266,11 @@ QString MachinesTab::removal_block(Id id) const {
 }
 
 void MachinesTab::service_machine(Id id) {
-    if (!is_allowed()) return;
+    if (!check_action_permission(this, shop_, employee_id_, Permission::ManageStaff)) return;
+    if (!shop_.can_service_machine(id, qt_convert::now())) {
+        show_action_refusal(this, QStringLiteral("Сначала завершите все партии машины."));
+        return;
+    }
     if (!confirm(this, QStringLiteral("Техобслуживание"),
                  QStringLiteral("Подтвердить выполненное ТО и обнулить счётчик часов?"))) return;
     if (run_guarded(this, [this, id] { shop_.service_machine(id, employee_id_, qt_convert::now()); })) {

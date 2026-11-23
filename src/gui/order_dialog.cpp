@@ -46,8 +46,7 @@ OrderDialog::OrderDialog(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     summary_label_ = new QLabel(this);
     error_label_ = new QLabel(this);
-    error_label_->setStyleSheet(kErrorStyle);
-    error_label_->setWordWrap(true);
+    style_error_label(error_label_);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     accept_button_ = buttons->button(QDialogButtonBox::Ok);
@@ -175,7 +174,7 @@ void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
         } else if (selected_client() == 0) {
             summary_label_->setText(QStringLiteral("Выберите клиента из списка по имени."));
         } else if (items_.empty()) {
-            summary_label_->setText(QStringLiteral("После добавления изделия здесь появятся цена и срок."));
+            summary_label_->setText(QStringLiteral("Добавьте хотя бы одно изделие, чтобы принять заказ."));
         } else {
             summary_label_->clear();
         }
@@ -198,7 +197,10 @@ void OrderDialog::add_item() {
 
 void OrderDialog::edit_item(Id id) {
     const auto entry = std::ranges::find(items_, id, &DraftItem::id);
-    if (entry == items_.end()) return;
+    if (entry == items_.end()) {
+        show_action_refusal(this, QStringLiteral("Изделие уже удалено из заказа."));
+        return;
+    }
     ItemDialog dialog(shop_, entry->item, QStringLiteral("Изменение изделия"), this);
     if (dialog.exec() == QDialog::Accepted) {
         entry->item = dialog.item();
@@ -208,8 +210,11 @@ void OrderDialog::edit_item(Id id) {
 
 void OrderDialog::remove_item(Id id) {
     const auto entry = std::ranges::find(items_, id, &DraftItem::id);
-    if (entry == items_.end() ||
-        !confirm(this, QStringLiteral("Удаление изделия"),
+    if (entry == items_.end()) {
+        show_action_refusal(this, QStringLiteral("Изделие уже удалено из заказа."));
+        return;
+    }
+    if (!confirm(this, QStringLiteral("Удаление изделия"),
                  QStringLiteral("Удалить изделие «%1» из заказа?").arg(qt_convert::text(entry->item.kind())))) {
         return;
     }

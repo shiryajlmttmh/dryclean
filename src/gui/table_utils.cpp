@@ -1,9 +1,11 @@
 #include "gui/table_utils.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QMenu>
 #include <QPainter>
 #include <QStyle>
@@ -34,6 +36,7 @@ constexpr int kEmptyTextVerticalInset = 4;
 constexpr int kActionHorizontalMargin = 3;
 constexpr int kActionVerticalMargin = 1;
 constexpr int kActionSpacing = 4;
+constexpr auto kActionReasonName = "actionReason";
 constexpr auto kRecordIdProperty = "recordId";
 
 class TableHeader : public QHeaderView {
@@ -84,6 +87,22 @@ QIcon edit_icon(const QWidget* widget) {
     return QIcon(pixmap);
 }
 
+void add_action_reason(QHBoxLayout* layout, const QString& reason) {
+    auto* panel = layout->parentWidget();
+    auto* label = panel->findChild<QLabel*>(QString::fromLatin1(kActionReasonName), Qt::FindDirectChildrenOnly);
+    if (!label) {
+        label = new QLabel(reason, panel);
+        label->setObjectName(QString::fromLatin1(kActionReasonName));
+        label->setTextFormat(Qt::PlainText);
+        auto size_policy = label->sizePolicy();
+        size_policy.setRetainSizeWhenHidden(true);
+        label->setSizePolicy(size_policy);
+        layout->insertWidget(0, label);
+    } else if (label->text() != reason) {
+        label->setText(label->text() + QStringLiteral(" · ") + reason);
+    }
+}
+
 QToolButton* make_action_button(QHBoxLayout* layout, const QString& name, const QString& unavailable) {
     auto* button = new QToolButton(layout->parentWidget());
     button->setFocusPolicy(Qt::StrongFocus);
@@ -96,7 +115,7 @@ QToolButton* make_action_button(QHBoxLayout* layout, const QString& name, const 
     button->setSizePolicy(size_policy);
     layout->addWidget(button);
     if (!unavailable.isEmpty()) {
-        layout->parentWidget()->setToolTip(unavailable);
+        add_action_reason(layout, unavailable);
     }
     return button;
 }
@@ -302,6 +321,12 @@ void add_remove_action(QHBoxLayout* layout, const QString& name, const std::func
     auto* button = make_action_button(layout, name, unavailable);
     button->setIcon(button->style()->standardIcon(QStyle::SP_TrashIcon));
     QObject::connect(button, &QToolButton::clicked, button, action);
+}
+
+void set_menu_action_unavailable(QAction* action, const QString& reason) {
+    action->setEnabled(false);
+    action->setToolTip(reason);
+    action->setText(QStringLiteral("%1 - %2").arg(action->text(), reason));
 }
 
 QMenu* add_more_actions(QHBoxLayout* layout, const QString& name) {

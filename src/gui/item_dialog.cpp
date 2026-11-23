@@ -103,8 +103,7 @@ ItemDialog::ItemDialog(const DryCleaningShop& shop, const Item& initial, const Q
     pages_->addWidget(build_services_page());
 
     error_label_ = new QLabel(this);
-    error_label_->setStyleSheet(kErrorStyle);
-    error_label_->setWordWrap(true);
+    style_error_label(error_label_);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
     buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("Отмена"));
@@ -228,7 +227,7 @@ void ItemDialog::show_step(int page) {
     pages_->setCurrentIndex(page);
     step_label_->setText(QStringLiteral("Шаг %1 из %2 · %3").arg(page + 1).arg(kStepTitles.size())
                              .arg(QString::fromUtf8(kStepTitles[page])));
-    back_button_->setEnabled(page != ItemStep);
+    back_button_->setVisible(page != ItemStep);
     next_button_->setText(page == ServicesStep ? QStringLiteral("Готово") : QStringLiteral("Далее"));
     error_label_->clear();
     if (page == ServicesStep) {
@@ -236,6 +235,7 @@ void ItemDialog::show_step(int page) {
         service_box_->setFocus();
     } else {
         next_button_->setEnabled(true);
+        next_button_->setAccessibleDescription({});
         if (page == ItemStep) kind_edit_->setFocus();
         else soil_box_->setFocus();
     }
@@ -334,7 +334,11 @@ void ItemDialog::add_defect() {
 
 void ItemDialog::remove_defect(QListWidgetItem* item) {
     const int row = defects_list_->row(item);
-    if (row < 0) return;
+    if (row < 0) {
+        error_label_->setText(QStringLiteral("Запись уже удалена."));
+        return;
+    }
+    error_label_->clear();
     defects_.erase(defects_.begin() + row);
     delete defects_list_->takeItem(row);
 }
@@ -352,7 +356,8 @@ QString ItemDialog::service_block(ServiceType service) const {
 
 void ItemDialog::refresh_service_choice() {
     const bool has_choice = service_box_->currentIndex() >= 0;
-    const QString hint = has_choice ? service_block(enum_value<ServiceType>(service_box_)) : QString();
+    const QString hint = has_choice ? service_block(enum_value<ServiceType>(service_box_))
+                                    : QStringLiteral("Все услуги уже добавлены.");
     add_stage_button_->setEnabled(has_choice && hint.isEmpty());
     service_hint_->setText(hint);
     service_hint_->setVisible(!hint.isEmpty());
@@ -384,62 +389,88 @@ void ItemDialog::refresh_stages() {
     refresh_service_choice();
 
     stages_table_->reset_rows(static_cast<int>(stages_.size()));
-    bool has_unavailable = false;
+    QString first_unavailable;
     for (int row = 0; row < stages_table_->rowCount(); ++row) {
         const auto& [id, service] = stages_[row];
         set_cell(stages_table_, row, StageNumber, row + 1);
         const auto blocked = service_block(service);
         auto name = qt_convert::text(display_name(service));
         if (!blocked.isEmpty()) {
-            has_unavailable = true;
+            if (first_unavailable.isEmpty()) first_unavailable = name + QStringLiteral(". ") + blocked;
             name += QStringLiteral(" - недоступна");
         }
         set_cell(stages_table_, row, StageService, name);
         if (!blocked.isEmpty()) stages_table_->item(row, StageService)->setToolTip(blocked);
 
         auto* actions = make_row_actions(stages_table_, row, id);
+        const bool only_stage = stages_.size() == 1;
+        const QString single_stage = QStringLiteral("Единственный этап.");
         auto* up = add_row_action(actions, QStringLiteral("↑"), [this, id] { move_stage(id, -1); },
-                                  row == 0 ? QStringLiteral("Этап уже первый.") : QString());
+                                  only_stage ? single_stage : row == 0 ? QStringLiteral("Первый этап.") : QString());
         up->setAccessibleName(QStringLiteral("Поднять этап"));
         if (up->isEnabled()) up->setToolTip(up->accessibleName());
         auto* down = add_row_action(actions, QStringLiteral("↓"), [this, id] { move_stage(id, 1); },
-                                    row + 1 == stages_table_->rowCount()
-                                        ? QStringLiteral("Этап уже последний.") : QString());
+                                    only_stage ? single_stage : row + 1 == stages_table_->rowCount()
+                                        ? QStringLiteral("Последний этап.") : QString());
         down->setAccessibleName(QStringLiteral("Опустить этап"));
         if (down->isEnabled()) down->setToolTip(down->accessibleName());
         add_remove_action(actions, QStringLiteral("Удалить этап"), [this, id] { remove_stage(id); });
     }
     stages_table_->finish_rows();
-    const QString hint = has_unavailable
-        ? QStringLiteral("Уберите недоступные этапы или измените данные изделия.")
-        : QString();
+    const QString hint = stages_.empty() ? QStringLiteral("Добавьте хотя бы один этап.")
+        : first_unavailable.isEmpty() ? QString()
+        : first_unavailable + QStringLiteral(" Уберите недоступный этап или измените данные изделия.");
     stages_hint_->setText(hint);
     stages_hint_->setVisible(!hint.isEmpty());
-    next_button_->setEnabled(!stages_.empty() && !has_unavailable);
+    next_button_->setEnabled(hint.isEmpty());
+    next_button_->setAccessibleDescription(hint);
 }
 
 void ItemDialog::add_stage() {
-    if (service_box_->currentIndex() < 0) return;
+    if (service_box_->currentIndex() < 0) {
+        error_label_->setText(QStringLiteral("Выберите услугу для нового этапа."));
+        return;
+    }
     const auto service = enum_value<ServiceType>(service_box_);
-    if (!service_block(service).isEmpty() || std::ranges::find(stages_, service, &Stage::service) != stages_.end()) return;
+    const auto blocked = service_block(service);
+    if (!blocked.isEmpty()) {
+        error_label_->setText(blocked);
+        return;
+    }
+    if (std::ranges::find(stages_, service, &Stage::service) != stages_.end()) {
+        error_label_->setText(QStringLiteral("Эта услуга уже добавлена."));
+        return;
+    }
     stages_.push_back({next_stage_id_++, service});
+    error_label_->clear();
     refresh_stages();
 }
 
 void ItemDialog::move_stage(Id id, int offset) {
     const auto entry = std::ranges::find(stages_, id, &Stage::id);
-    if (entry == stages_.end()) return;
+    if (entry == stages_.end()) {
+        error_label_->setText(QStringLiteral("Этап уже удалён."));
+        return;
+    }
     const auto target = std::distance(stages_.begin(), entry) + offset;
-    if (target < 0 || target >= static_cast<std::ptrdiff_t>(stages_.size())) return;
+    if (target < 0 || target >= static_cast<std::ptrdiff_t>(stages_.size())) {
+        error_label_->setText(offset < 0 ? QStringLiteral("Этап уже первый.") : QStringLiteral("Этап уже последний."));
+        return;
+    }
     std::iter_swap(entry, stages_.begin() + target);
+    error_label_->clear();
     stages_table_->reset_sort();
     refresh_stages();
 }
 
 void ItemDialog::remove_stage(Id id) {
     const auto entry = std::ranges::find(stages_, id, &Stage::id);
-    if (entry == stages_.end()) return;
+    if (entry == stages_.end()) {
+        error_label_->setText(QStringLiteral("Этап уже удалён."));
+        return;
+    }
     stages_.erase(entry);
+    error_label_->clear();
     refresh_stages();
 }
 

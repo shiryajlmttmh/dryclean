@@ -7,6 +7,7 @@
 
 class QDialog;
 class QHBoxLayout;
+class QLabel;
 class QPushButton;
 class TableWidget;
 
@@ -44,4 +45,5 @@ private:
     Permission permission_;
     bool has_view_actions_;
     QPushButton* add_button_;
+    QLabel* read_only_hint_;
 };

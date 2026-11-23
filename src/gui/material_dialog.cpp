@@ -5,6 +5,7 @@
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QLabel>
 #include <QLineEdit>
 
 #include "display.h"
@@ -48,6 +49,12 @@ MaterialDialog::MaterialDialog(const DryCleaningShop& shop, const QString& title
     form()->addRow(QStringLiteral("Название:"), name_edit_);
     form()->addRow(QStringLiteral("Единица измерения:"), unit_edit_);
     form()->addRow(QStringLiteral("Остаток:"), stock_edit_);
+    if (!is_new) {
+        auto* hint = new QLabel(QStringLiteral(
+            "Единица измерения задана при создании. Остаток меняется через «Пополнить» и «Списать»."), this);
+        hint->setWordWrap(true);
+        form()->addRow(hint);
+    }
     form()->addRow(QStringLiteral("Расход на 1 кг белья:"), consumption_edit_);
     bool first_row = true;
     for (const ServiceType service : kServices) {

@@ -92,13 +92,29 @@ bool password::valid_hash(const std::string& encoded) {
     return true;
 }
 
+void password::check_length(std::string_view value) {
+    if (value.size() > kMaxPasswordBytes) {
+        throw InvalidInputException("password", "Пароль слишком длинный");
+    }
+}
+
+void password::check_confirmation(std::string_view value, std::string_view confirmation) {
+    check_length(value);
+    check_length(confirmation);
+    if (value != confirmation) {
+        throw InvalidInputException("password", "Пароли не совпадают.");
+    }
+}
+
 std::string password::hash(const std::string& value) {
+    check_length(value);
     const auto characters = std::count_if(value.begin(), value.end(), [](unsigned char c) {
         return (c & kUtf8BytePrefixMask) != kUtf8ContinuationPrefix;
     });
-    if (characters < kMinPasswordCharacters || value.size() > kMaxPasswordBytes ||
+    if (characters < kMinPasswordCharacters ||
         std::all_of(value.begin(), value.end(), [](unsigned char c) { return c == ' ' || c == '\t'; })) {
-        throw InvalidInputException("password", "пароль должен содержать минимум 8 символов, не более 256 байт UTF-8 и не состоять из пробелов");
+        throw InvalidInputException("password", "Пароль должен содержать минимум " + std::to_string(kMinPasswordCharacters) +
+                                 " символов и не состоять из пробелов.");
     }
     std::array<unsigned char, kSaltBytes> salt{};
 #ifdef _WIN32

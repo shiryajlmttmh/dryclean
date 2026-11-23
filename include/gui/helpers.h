@@ -8,13 +8,16 @@
 #include "shop.h"
 
 inline constexpr int kStretch = 1;
-inline constexpr const char* kErrorStyle = "color: #b00020;";
 
 class QDoubleSpinBox;
+class QLabel;
 class QTableWidget;
 class QWidget;
 
 bool run_guarded(QWidget* parent, const std::function<void()>& action);
+void style_error_label(QLabel* label);
+void show_action_refusal(QWidget* parent, const QString& reason);
+bool check_action_permission(QWidget* parent, const DryCleaningShop& shop, Id employee_id, Permission permission);
 bool confirm(QWidget* parent, const QString& title, const QString& text);
 bool has_permission(const DryCleaningShop& shop, Id employee_id, Permission permission);
 std::optional<Id> selected_id(const QTableWidget* table, int id_column);

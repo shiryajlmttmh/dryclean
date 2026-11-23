@@ -10,6 +10,7 @@
 
 #include "types.h"
 
+class QAction;
 class QHBoxLayout;
 class QMenu;
 class QToolButton;
@@ -67,4 +68,5 @@ void add_edit_action(QHBoxLayout* layout, const QString& name, const std::functi
                      const QString& unavailable = {});
 void add_remove_action(QHBoxLayout* layout, const QString& name, const std::function<void()>& action,
                        const QString& unavailable = {});
+void set_menu_action_unavailable(QAction* action, const QString& reason);
 QMenu* add_more_actions(QHBoxLayout* layout, const QString& name);

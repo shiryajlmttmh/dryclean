@@ -7,6 +7,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSplitter>
+#include <QStringList>
 #include <QTabWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -119,6 +120,7 @@ PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(toolbar);
+    action_hint_ = add_text(layout, {});
     summary_label_ = add_text(layout, {});
 
     auto* panels = new QSplitter(Qt::Horizontal, this);
@@ -171,9 +173,11 @@ void PlanningTab::refresh() {
 void PlanningTab::update_controls(const Plan* preview, const QString& stale) {
     const bool may_build = has_permission(shop_, employee_id_, Permission::BuildPlan);
     const bool may_confirm = has_permission(shop_, employee_id_, Permission::ConfirmPlan);
-    build_button_->setEnabled(may_build && candidate_count_ != 0);
-    build_button_->setToolTip(may_build ? (candidate_count_ ? QString() : QStringLiteral("Нет изделий для планирования."))
-                                      : QStringLiteral("Для построения плана нужны права оператора."));
+    const QString build_hint = may_build ? (candidate_count_ ? QString() : QStringLiteral("Нет изделий для планирования."))
+                                         : QStringLiteral("Для построения плана нужны права оператора.");
+    build_button_->setEnabled(build_hint.isEmpty());
+    build_button_->setToolTip(build_hint);
+    build_button_->setAccessibleDescription(build_hint);
     confirm_button_->setEnabled(preview && !preview->batches.empty() && may_confirm);
     QString confirm_hint;
     if (!may_confirm) confirm_hint = QStringLiteral("Для подтверждения плана нужны права оператора.");
@@ -181,6 +185,12 @@ void PlanningTab::update_controls(const Plan* preview, const QString& stale) {
     else if (!preview) confirm_hint = QStringLiteral("Сначала постройте план.");
     else if (preview->batches.empty()) confirm_hint = QStringLiteral("В плане нет партий для подтверждения.");
     confirm_button_->setToolTip(confirm_hint);
+    confirm_button_->setAccessibleDescription(confirm_hint);
+    QStringList hints;
+    if (!build_hint.isEmpty()) hints << build_hint;
+    if (!confirm_hint.isEmpty() && (stale.isEmpty() || confirm_hint != stale)) hints << confirm_hint;
+    action_hint_->setText(hints.join(QStringLiteral(" ")));
+    action_hint_->setVisible(!hints.isEmpty());
 
     if (!stale.isEmpty()) {
         summary_label_->setText(stale);
@@ -192,8 +202,7 @@ void PlanningTab::update_controls(const Plan* preview, const QString& stale) {
         summary_label_->setText(QStringLiteral("План подтверждён · Создано партий: %1 · Ожидают планирования: %2")
             .arg(confirmed_batches_).arg(candidate_count_));
     } else {
-        summary_label_->setText(may_build ? QStringLiteral("Ожидают планирования: %1").arg(candidate_count_)
-                                          : QStringLiteral("Для построения плана нужны права оператора."));
+        summary_label_->setText(QStringLiteral("Ожидают планирования: %1").arg(candidate_count_));
     }
 }
 
@@ -308,7 +317,10 @@ void PlanningTab::build() {
 }
 
 void PlanningTab::confirm() {
-    if (!plan_) return;
+    if (!plan_) {
+        show_action_refusal(this, QStringLiteral("Сначала постройте план."));
+        return;
+    }
     std::map<Id, std::string> unplaced(plan_->unplaced.begin(), plan_->unplaced.end());
     std::vector<Id> created;
     if (!run_guarded(this, [&] { created = shop_.confirm_plan(*plan_, employee_id_, qt_convert::now()); })) {

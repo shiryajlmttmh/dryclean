@@ -100,9 +100,7 @@ void MaterialsTab::add_extra_actions(QHBoxLayout* actions, Id id) {
     menu->addAction(QStringLiteral("Пополнить"), this, [this, id] { restock(id); });
     auto* write_off = menu->addAction(QStringLiteral("Списать"), this, [this, id] { this->write_off(id); });
     if (shop_.materials().get(id).stock() <= 0.0) {
-        write_off->setEnabled(false);
-        write_off->setToolTip(QStringLiteral("Сначала пополните остаток материала."));
-        menu->setToolTipsVisible(true);
+        set_menu_action_unavailable(write_off, QStringLiteral("сначала пополните остаток"));
     }
 }
 
@@ -129,7 +127,6 @@ void MaterialsTab::remove_record(Id id) { shop_.remove_material(id, employee_id_
 
 void MaterialsTab::change_stock(Id id, const QString& title, const QString& prompt,
                                 const std::function<void(Id, double)>& apply) {
-    if (!is_allowed()) return;
     QInputDialog dialog(this);
     dialog.setWindowTitle(title);
     dialog.setLabelText(prompt.arg(qt_convert::text(shop_.materials().get(id).unit())));
@@ -145,11 +142,18 @@ void MaterialsTab::change_stock(Id id, const QString& title, const QString& prom
 }
 
 void MaterialsTab::restock(Id id) {
+    if (!check_action_permission(this, shop_, employee_id_, Permission::ManageStock)) return;
     change_stock(id, QStringLiteral("Пополнение склада"), QStringLiteral("Сколько добавить (%1):"),
                  [this](Id material_id, double amount) { shop_.restock_material(material_id, amount, employee_id_); });
 }
 
 void MaterialsTab::write_off(Id id) {
+    if (!check_action_permission(this, shop_, employee_id_, Permission::ManageStock)) return;
+    if (shop_.materials().get(id).stock() <= 0.0) {
+        show_action_refusal(this, QStringLiteral("Сначала пополните остаток материала."));
+        refresh();
+        return;
+    }
     change_stock(id, QStringLiteral("Списание со склада"), QStringLiteral("Сколько списать (%1):"),
                  [this](Id material_id, double amount) { shop_.write_off_material(material_id, amount, employee_id_); });
 }

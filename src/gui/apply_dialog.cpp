@@ -3,7 +3,6 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QLabel>
-#include <QPalette>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -14,9 +13,6 @@
 namespace {
 
 constexpr int kDialogWidth = 380;
-constexpr int kDarkBackgroundLightnessThreshold = 128;
-constexpr const char* kErrorStyleOnDark = "color: #ff8585;";
-constexpr const char* kErrorStyleOnLight = "color: #a00020;";
 
 }
 
@@ -26,9 +22,7 @@ ApplyDialog::ApplyDialog(const QString& title, QWidget* parent) : QDialog(parent
 
     form_ = new QFormLayout;
     error_label_ = new QLabel(this);
-    const bool dark_background = palette().color(QPalette::Window).lightness() < kDarkBackgroundLightnessThreshold;
-    error_label_->setStyleSheet(dark_background ? kErrorStyleOnDark : kErrorStyleOnLight);
-    error_label_->setWordWrap(true);
+    style_error_label(error_label_);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Сохранить"));

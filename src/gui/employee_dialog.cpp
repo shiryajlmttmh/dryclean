@@ -8,7 +8,7 @@
 
 #include "gui/enum_combo.h"
 #include "gui/qt_convert.h"
-#include "exceptions.h"
+#include "password.h"
 
 EmployeeDialog::EmployeeDialog(const DryCleaningShop& shop, const QString& title, const Employee& initial, Apply apply, QWidget* parent)
     : ApplyDialog(title, parent), initial_(initial), apply_(std::move(apply)) {
@@ -18,7 +18,7 @@ EmployeeDialog::EmployeeDialog(const DryCleaningShop& shop, const QString& title
     password_edit_ = new QLineEdit(this);
     password_edit_->setEchoMode(QLineEdit::Password);
     password_edit_->setPlaceholderText(initial.id() != 0 ? QStringLiteral("Пусто - сохранить пароль")
-                                                            : QStringLiteral("Новый пароль, минимум 8 символов"));
+                                                            : QStringLiteral("Новый пароль, минимум %1 символов").arg(password::kMinPasswordCharacters));
     confirmation_edit_ = new QLineEdit(this);
     confirmation_edit_->setEchoMode(QLineEdit::Password);
 
@@ -35,15 +35,14 @@ EmployeeDialog::EmployeeDialog(const DryCleaningShop& shop, const QString& title
 }
 
 void EmployeeDialog::apply() {
+    const auto value = password_edit_->text().toStdString();
+    password::check_confirmation(value, confirmation_edit_->text().toStdString());
     Employee updated = initial_;
     updated.set_name(name_edit_->text().toStdString());
     updated.set_login(login_edit_->text().toStdString());
     updated.set_role(enum_value<EmployeeRole>(role_box_));
-    if (password_edit_->text() != confirmation_edit_->text()) {
-        throw InvalidInputException("password", "пароли не совпадают");
-    }
-    if (!password_edit_->text().isEmpty() || initial_.id() == 0) {
-        updated.set_password(password_edit_->text().toStdString());
+    if (!value.empty() || initial_.id() == 0) {
+        updated.set_password(value);
     }
     apply_(updated);
 }

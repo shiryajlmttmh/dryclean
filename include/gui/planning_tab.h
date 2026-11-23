@@ -45,6 +45,7 @@ private:
     QPushButton* build_button_;
     QPushButton* confirm_button_;
     QLabel* summary_label_;
+    QLabel* action_hint_;
     QVBoxLayout* queue_cards_;
     QVBoxLayout* batch_cards_;
     QToolButton* details_button_;
