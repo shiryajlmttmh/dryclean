@@ -25,7 +25,12 @@ private:
     std::string field_name_;
 };
 
-class FileFormatException : public ShopException {
+class DataCorruptionException : public ShopException {
+public:
+    using ShopException::ShopException;
+};
+
+class FileFormatException : public DataCorruptionException {
 public:
     FileFormatException(std::string file, std::size_t line, std::string message);
     const std::string& file() const noexcept;
@@ -61,7 +66,7 @@ private:
     Id item_id_;
 };
 
-class IntegrityException : public ShopException {
+class IntegrityException : public DataCorruptionException {
 public:
     explicit IntegrityException(std::string message);
     std::string title() const override;

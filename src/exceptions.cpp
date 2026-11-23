@@ -19,7 +19,7 @@ const std::string& InvalidInputException::field_name() const noexcept { return f
 std::string InvalidInputException::title() const { return "Некорректные данные"; }
 
 FileFormatException::FileFormatException(std::string file, std::size_t line, std::string message)
-    : ShopException(message), file_(std::move(file)), line_(line) {}
+    : DataCorruptionException(message), file_(std::move(file)), line_(line) {}
 
 const std::string& FileFormatException::file() const noexcept { return file_; }
 
@@ -56,6 +56,6 @@ const std::filesystem::path& StorageException::path() const noexcept { return pa
 
 std::string StorageException::title() const { return "Ошибка хранилища"; }
 
-IntegrityException::IntegrityException(std::string message) : ShopException(message) {}
+IntegrityException::IntegrityException(std::string message) : DataCorruptionException(message) {}
 
 std::string IntegrityException::title() const { return "Нарушена целостность данных"; }

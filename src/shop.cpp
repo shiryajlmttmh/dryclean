@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <fstream>
 #include <functional>
 #include <sstream>
@@ -274,10 +275,22 @@ void write_manifest(const std::filesystem::path& path, Revision revision,
     }
 }
 
+void require_snapshot_file(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto status = std::filesystem::status(path, ec);
+    if (ec && ec != std::errc::no_such_file_or_directory && ec != std::errc::not_a_directory) {
+        throw StorageException(path, "не удалось проверить файл снимка");
+    }
+    if (!std::filesystem::is_regular_file(status)) {
+        throw FileFormatException(path.filename().string(), kWholeFile, "файл снимка отсутствует или повреждён");
+    }
+}
+
 std::map<std::string, std::size_t> read_manifest(const std::filesystem::path& path, Revision& revision) {
+    require_snapshot_file(path);
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        throw FileFormatException(kManifestName, kWholeFile, "файл манифеста отсутствует");
+        throw StorageException(path, "не удалось открыть манифест для чтения");
     }
     std::map<std::string, std::size_t> counts;
     std::string text;
@@ -317,8 +330,10 @@ std::map<std::string, std::size_t> read_manifest(const std::filesystem::path& pa
             }
         }
     } catch (const InvalidInputException& error) {
+        if (in.bad()) throw StorageException(path, "ошибка чтения манифеста");
         throw FileFormatException(kManifestName, line_number, error.what());
     }
+    if (in.bad()) throw StorageException(path, "ошибка чтения манифеста");
     return counts;
 }
 
@@ -326,10 +341,7 @@ template <class T>
 void load_file(Repository<T>& repository, const std::filesystem::path& directory,
                const std::map<std::string, std::size_t>& counts) {
     const std::string name = file_name_for<T>();
-    std::error_code ec;
-    if (!std::filesystem::exists(directory / name, ec)) {
-        throw FileFormatException(name, kWholeFile, "файл снимка отсутствует");
-    }
+    require_snapshot_file(directory / name);
     const auto expected = counts.find(name);
     if (expected == counts.end()) {
         throw FileFormatException(kManifestName, kWholeFile, "в манифесте нет файла " + name);
@@ -1489,6 +1501,7 @@ void DryCleaningShop::save_all() {
     }
     validate_references();
     ensure_storage();
+    storage_->discard_uncommitted(loaded_generation_);
     const Generation generation = storage_->begin_generation();
     const std::filesystem::path directory = storage_->generation_path(generation);
     try {
@@ -1509,21 +1522,16 @@ void DryCleaningShop::save_all() {
                         {file_name_for<Employee>(), employees_.size()},
                         {file_name_for<Machine>(), machines_.size()},
                         {file_name_for<Suggestion>(), suggestions_.size()}});
-        storage_->commit_generation(generation);
+        storage_->commit_generation(generation, loaded_generation_);
     } catch (...) {
         storage_->abort_generation(generation);
         throw;
     }
+    loaded_generation_ = generation;
     dirty_ = false;
 }
 
-void DryCleaningShop::load_all() {
-    if (dirty_) {
-        throw InvalidInputException("state", "есть несохранённые изменения, загрузка запрещена");
-    }
-    ensure_storage();
-    const std::optional<Generation> current = storage_->current_generation();
-
+struct DryCleaningShop::Snapshot {
     Repository<Client> clients;
     Repository<Item> items;
     Repository<Order> orders;
@@ -1532,39 +1540,101 @@ void DryCleaningShop::load_all() {
     Repository<Employee> employees;
     Repository<Machine> machines;
     Repository<Suggestion> suggestions;
-    Revision stored_revision = 0;
+    Revision revision = 0;
+};
 
-    if (!current) {
-        if (storage_->has_data()) {
-            throw FileFormatException("CURRENT", kWholeFile, "указатель CURRENT отсутствует, но в каталоге есть данные");
-        }
-    } else {
-        const std::filesystem::path directory = storage_->generation_path(*current);
-        const auto counts = read_manifest(directory / kManifestName, stored_revision);
-        load_file(clients, directory, counts);
-        load_file(items, directory, counts);
-        load_file(orders, directory, counts);
-        load_file(batches, directory, counts);
-        load_file(materials, directory, counts);
-        load_file(employees, directory, counts);
-        load_file(machines, directory, counts);
-        load_file(suggestions, directory, counts);
-        check_suggestions(suggestions);
-        check_references(clients, items, orders, batches, employees, machines);
+DryCleaningShop::Snapshot DryCleaningShop::read_snapshot(Generation generation) const {
+    Snapshot snapshot;
+    const auto directory = storage_->generation_path(generation);
+    const auto counts = read_manifest(directory / kManifestName, snapshot.revision);
+    load_file(snapshot.clients, directory, counts);
+    load_file(snapshot.items, directory, counts);
+    load_file(snapshot.orders, directory, counts);
+    load_file(snapshot.batches, directory, counts);
+    load_file(snapshot.materials, directory, counts);
+    load_file(snapshot.employees, directory, counts);
+    load_file(snapshot.machines, directory, counts);
+    load_file(snapshot.suggestions, directory, counts);
+    check_suggestions(snapshot.suggestions);
+    try {
+        check_references(snapshot.clients, snapshot.items, snapshot.orders, snapshot.batches,
+                         snapshot.employees, snapshot.machines);
+    } catch (const InvalidInputException& error) {
+        throw IntegrityException(error.what());
     }
+    return snapshot;
+}
 
-    const Revision base = std::max(revision_, stored_revision);
+void DryCleaningShop::use_snapshot(Snapshot& snapshot, Revision revision, std::optional<Generation> generation) {
+    clients_.swap(snapshot.clients);
+    items_.swap(snapshot.items);
+    orders_.swap(snapshot.orders);
+    batches_.swap(snapshot.batches);
+    materials_.swap(snapshot.materials);
+    employees_.swap(snapshot.employees);
+    machines_.swap(snapshot.machines);
+    suggestions_.swap(snapshot.suggestions);
+    revision_ = revision;
+    loaded_generation_ = generation;
+    loaded_ = true;
+}
+
+void DryCleaningShop::load_all() {
+    if (dirty_) throw InvalidInputException("state", "есть несохранённые изменения, загрузка запрещена");
+    ensure_storage();
+    const auto current = storage_->current_generation();
+    if (!current && storage_->has_data()) {
+        throw FileFormatException("CURRENT", kWholeFile, "указатель CURRENT отсутствует, но в каталоге есть данные");
+    }
+    Snapshot snapshot = current ? read_snapshot(*current) : Snapshot{};
+    const Revision base = std::max(revision_, snapshot.revision);
     if (loaded_ && base == std::numeric_limits<Revision>::max()) {
         throw InvalidInputException("revision", "исчерпан счётчик изменений");
     }
-    clients_.swap(clients);
-    items_.swap(items);
-    orders_.swap(orders);
-    batches_.swap(batches);
-    materials_.swap(materials);
-    employees_.swap(employees);
-    machines_.swap(machines);
-    suggestions_.swap(suggestions);
-    revision_ = loaded_ ? base + 1 : base;
-    loaded_ = true;
+    use_snapshot(snapshot, loaded_ ? base + 1 : base, current);
+}
+
+std::optional<RecoverySnapshot> DryCleaningShop::find_recovery_snapshot() {
+    ensure_storage();
+    for (Generation generation : storage_->recovery_generations()) {
+        try {
+            read_snapshot(generation);
+        } catch (const DataCorruptionException&) {
+            continue;
+        }
+        const auto manifest = storage_->generation_path(generation) / kManifestName;
+        std::error_code ec;
+        const auto saved_at = std::filesystem::last_write_time(manifest, ec);
+        if (ec) throw StorageException(manifest, "не удалось прочитать время сохранения снимка");
+#ifdef _MSVC_STL_VERSION
+        const auto system_time = std::chrono::clock_cast<std::chrono::system_clock>(saved_at);
+#else
+        const auto system_time = std::filesystem::file_time_type::clock::to_sys(saved_at);
+#endif
+        return RecoverySnapshot{generation, std::chrono::floor<std::chrono::milliseconds>(system_time)};
+    }
+    return std::nullopt;
+}
+
+std::filesystem::path DryCleaningShop::restore_snapshot(Generation generation) {
+    if (loaded_ || dirty_) throw InvalidInputException("state", "восстановление доступно до загрузки данных");
+    ensure_storage();
+    const auto candidates = storage_->recovery_generations();
+    if (std::ranges::find(candidates, generation) == candidates.end()) {
+        throw IntegrityException("выбранный снимок больше недоступен для восстановления");
+    }
+    auto snapshot = read_snapshot(generation);
+    const auto replacement = storage_->begin_generation();
+    std::filesystem::path archive;
+    try {
+        archive = storage_->archive_damage(generation, replacement);
+        storage_->copy_generation(generation, replacement);
+        snapshot = read_snapshot(replacement);
+        storage_->commit_generation(replacement, generation);
+    } catch (...) {
+        storage_->abort_generation(replacement);
+        throw;
+    }
+    use_snapshot(snapshot, snapshot.revision, replacement);
+    return archive;
 }

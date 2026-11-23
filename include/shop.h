@@ -32,6 +32,11 @@ struct OrderQuote {
     TimePoint deadline{};
 };
 
+struct RecoverySnapshot {
+    Generation generation;
+    TimePoint saved_at;
+};
+
 class DryCleaningShop {
 public:
     explicit DryCleaningShop(std::filesystem::path data_dir);
@@ -102,6 +107,8 @@ public:
 
     void save_all();
     void load_all();
+    std::optional<RecoverySnapshot> find_recovery_snapshot();
+    std::filesystem::path restore_snapshot(Generation generation);
 
     Id add_material(Material material, Id acting_employee);
     void update_material(const Material& material, Id acting_employee);
@@ -147,6 +154,9 @@ private:
                      const Repository<Machine>& machines, const Repository<Employee>& employees) const;
     void validate_references() const;
     void ensure_storage();
+    struct Snapshot;
+    Snapshot read_snapshot(Generation generation) const;
+    void use_snapshot(Snapshot& snapshot, Revision revision, std::optional<Generation> generation);
 
     Repository<Client> clients_;
     Repository<Item> items_;
@@ -160,6 +170,7 @@ private:
     BatchPlanner planner_;
     std::filesystem::path data_dir_;
     std::unique_ptr<Storage> storage_;
+    std::optional<Generation> loaded_generation_;
     Revision revision_ = 0;
     bool dirty_ = false;
     bool loaded_ = false;

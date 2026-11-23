@@ -46,6 +46,7 @@ endif()
 add_executable(dryclean
     src/main.cpp
     src/gui/login_dialog.cpp
+    src/gui/startup.cpp
     src/gui/main_window.cpp
     src/gui/client_dialog.cpp
     src/gui/item_dialog.cpp
@@ -65,6 +66,7 @@ add_executable(dryclean
     src/gui/machines_tab.cpp
     src/gui/employees_tab.cpp
     include/gui/login_dialog.h
+    include/gui/startup.h
     include/gui/main_window.h
     include/gui/client_dialog.h
     include/gui/item_dialog.h

@@ -1,12 +1,11 @@
 #include <QApplication>
 #include <cstdlib>
-#include <QMessageBox>
 #include <QStandardPaths>
 
-#include "exceptions.h"
 #include "gui/login_dialog.h"
 #include "gui/main_window.h"
 #include "gui/qt_convert.h"
+#include "gui/startup.h"
 #include "shop.h"
 
 namespace {
@@ -23,12 +22,7 @@ int main(int argc, char* argv[]) {
 
     const QString data_directory = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     DryCleaningShop shop(qt_convert::path(data_directory));
-    try {
-        shop.load_all();
-    } catch (const ShopException& error) {
-        QMessageBox::critical(nullptr, qt_convert::text(error.title()), qt_convert::text(error.what()));
-        return EXIT_FAILURE;
-    }
+    if (!load_shop(shop)) return EXIT_FAILURE;
 
     LoginDialog login(shop);
     if (login.exec() != QDialog::Accepted) {

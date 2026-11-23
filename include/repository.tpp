@@ -235,6 +235,7 @@ void Repository<T>::load(const std::filesystem::path& path) {
     in.imbue(std::locale::classic());
     try {
         auto loaded = load_collection<T>(in);
+        if (in.bad()) throw StorageException(path, "ошибка чтения файла");
         items_ = std::move(loaded.first);
         next_id_ = loaded.second;
     } catch (const FileFormatException& error) {
