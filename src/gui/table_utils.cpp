@@ -19,6 +19,21 @@ constexpr int kBaseRowRole = Qt::UserRole + 1;
 constexpr int kSortValueRole = Qt::UserRole + 2;
 constexpr int kMaxDataCellWidth = 180;
 constexpr int kMeasureAllRows = -1;
+constexpr int kEditIconSize = 16;
+constexpr qreal kEditIconStrokeWidth = 1.3;
+constexpr QPointF kPencilTip{2.5, 13.5};
+constexpr QPointF kPencilLowerLeft{3.4, 9.3};
+constexpr QPointF kPencilUpperLeft{10.7, 2.0};
+constexpr QPointF kPencilUpperRight{14.0, 5.3};
+constexpr QPointF kPencilLowerRight{6.7, 12.6};
+constexpr QPointF kPencilCapLeft{9.4, 3.3};
+constexpr QPointF kPencilCapRight{12.7, 6.6};
+constexpr int kGridLineWidth = 1;
+constexpr int kEmptyTextHorizontalInset = 12;
+constexpr int kEmptyTextVerticalInset = 4;
+constexpr int kActionHorizontalMargin = 3;
+constexpr int kActionVerticalMargin = 1;
+constexpr int kActionSpacing = 4;
 constexpr auto kRecordIdProperty = "recordId";
 
 class TableHeader : public QHeaderView {
@@ -28,7 +43,6 @@ public:
 protected:
     QSize sectionSizeFromContents(int column) const override {
         ensurePolished();
-        // Measure the same label and sort indicator that Qt actually paints.
         QStyleOptionHeader option;
         initStyleOption(&option);
         initStyleOptionForIndex(&option, column);
@@ -57,17 +71,16 @@ public:
 };
 
 QIcon edit_icon(const QWidget* widget) {
-    constexpr int size = 16;
     const qreal scale = widget->devicePixelRatioF();
-    QPixmap pixmap(qRound(size * scale), qRound(size * scale));
+    QPixmap pixmap(qRound(kEditIconSize * scale), qRound(kEditIconSize * scale));
     pixmap.setDevicePixelRatio(scale);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(QPen(widget->palette().color(QPalette::ButtonText), 1.3, Qt::SolidLine, Qt::RoundCap,
+    painter.setPen(QPen(widget->palette().color(QPalette::ButtonText), kEditIconStrokeWidth, Qt::SolidLine, Qt::RoundCap,
                         Qt::RoundJoin));
-    painter.drawPolygon(QPolygonF{{2.5, 13.5}, {3.4, 9.3}, {10.7, 2.0}, {14.0, 5.3}, {6.7, 12.6}});
-    painter.drawLine(QPointF(9.4, 3.3), QPointF(12.7, 6.6));
+    painter.drawPolygon(QPolygonF{kPencilTip, kPencilLowerLeft, kPencilUpperLeft, kPencilUpperRight, kPencilLowerRight});
+    painter.drawLine(kPencilCapLeft, kPencilCapRight);
     return QIcon(pixmap);
 }
 
@@ -78,7 +91,6 @@ QToolButton* make_action_button(QHBoxLayout* layout, const QString& name, const 
     button->setAccessibleDescription(unavailable);
     button->setToolTip(unavailable.isEmpty() ? name : unavailable);
     button->setEnabled(unavailable.isEmpty());
-    // The layout must include new buttons even before their row is visible.
     auto size_policy = button->sizePolicy();
     size_policy.setRetainSizeWhenHidden(true);
     button->setSizePolicy(size_policy);
@@ -167,7 +179,7 @@ void TableWidget::set_empty_text(const QString& text) {
 int TableWidget::actions_column() const noexcept { return actions_column_; }
 
 void TableWidget::reset_sort() {
-    sort_column_ = -1;
+    sort_column_ = kNoColumn;
     horizontalHeader()->setSortIndicatorShown(false);
     sortItems(0, Qt::AscendingOrder);
 }
@@ -194,14 +206,13 @@ int TableWidget::sizeHintForColumn(int column) const {
         return std::min(QTableWidget::sizeHintForColumn(column), kMaxDataCellWidth);
     }
 
-    // The widest action can be outside the rows sampled by QTableView.
     int width = 0;
     for (int row = 0; row < rowCount(); ++row) {
         if (const auto* actions = cellWidget(row, column)) {
             width = std::max(width, actions->sizeHint().width());
         }
     }
-    return width + (showGrid() ? 1 : 0);
+    return width + (showGrid() ? kGridLineWidth : 0);
 }
 
 void TableWidget::paintEvent(QPaintEvent* event) {
@@ -209,7 +220,8 @@ void TableWidget::paintEvent(QPaintEvent* event) {
     if (rowCount() == 0) {
         QPainter painter(viewport());
         painter.setPen(palette().color(QPalette::Text));
-        painter.drawText(viewport()->rect().adjusted(12, 4, -12, -4),
+        painter.drawText(viewport()->rect().adjusted(kEmptyTextHorizontalInset, kEmptyTextVerticalInset,
+                                                     -kEmptyTextHorizontalInset, -kEmptyTextVerticalInset),
                          Qt::AlignCenter | Qt::TextWordWrap, empty_text_);
     }
 }
@@ -262,8 +274,9 @@ QHBoxLayout* make_row_actions(TableWidget* table, int row, Id id) {
     auto* panel = new QWidget(table);
     panel->setProperty(kRecordIdProperty, id);
     auto* layout = new QHBoxLayout(panel);
-    layout->setContentsMargins(3, 1, 3, 1);
-    layout->setSpacing(4);
+    layout->setContentsMargins(kActionHorizontalMargin, kActionVerticalMargin,
+                               kActionHorizontalMargin, kActionVerticalMargin);
+    layout->setSpacing(kActionSpacing);
     layout->setAlignment(Qt::AlignRight);
     table->setCellWidget(row, table->actions_column(), panel);
     return layout;

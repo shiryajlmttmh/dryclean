@@ -41,6 +41,15 @@ constexpr int kScaleHeight = 104;
 constexpr qreal kSidePadding = 30;
 constexpr qreal kTrackTop = 35;
 constexpr qreal kTrackHeight = 46;
+constexpr qreal kMinTrackWidth = 1;
+constexpr qreal kLabelTop = 5;
+constexpr qreal kMajorTickAboveTrack = 7;
+constexpr qreal kMinorTickAboveTrack = 3;
+constexpr qreal kTickBelowTrack = 3;
+constexpr qreal kTickPenWidth = 1;
+constexpr qreal kDayLabelGap = 6;
+constexpr int kDateControlGap = 8;
+constexpr auto kDayTickInterval = std::chrono::hours(1);
 constexpr auto kFreeTimeColor = "#86cfa5";
 constexpr auto kCompletedBatchColor = "#5d9bd3";
 constexpr auto kRunningBatchColor = "#ab8be3";
@@ -146,7 +155,7 @@ protected:
 
 private:
     QRectF track() const {
-        return {kSidePadding, kTrackTop, std::max(qreal(1), viewport()->width() - 2 * kSidePadding), kTrackHeight};
+        return {kSidePadding, kTrackTop, std::max(kMinTrackWidth, viewport()->width() - 2 * kSidePadding), kTrackHeight};
     }
 
     qreal x_at(TimePoint time) const {
@@ -160,11 +169,12 @@ private:
         auto* label = scene()->addSimpleText(text, label_font);
         label->setBrush(palette().text());
         const qreal width = label->boundingRect().width();
-        label->setPos(std::max(qreal(0), std::min(center - width / 2, viewport()->width() - width)), 5);
+        label->setPos(std::max(qreal(0), std::min(center - width / 2, viewport()->width() - width)), kLabelTop);
     }
 
     void add_tick(qreal x, bool major) {
-        scene()->addLine(x, kTrackTop - (major ? 7 : 3), x, track().bottom() + 3, QPen(palette().mid(), 1));
+        scene()->addLine(x, kTrackTop - (major ? kMajorTickAboveTrack : kMinorTickAboveTrack),
+                         x, track().bottom() + kTickBelowTrack, QPen(palette().mid(), kTickPenWidth));
     }
 
     void draw_week(QDate monday) {
@@ -185,10 +195,10 @@ private:
             return QDateTime::fromMSecsSinceEpoch(to_epoch_ms(time)).toString(QStringLiteral("HH:mm"));
         };
         const qreal spacing = track().width() / hours_between(end_, start_);
-        const qreal label_width = fontMetrics().horizontalAdvance(QStringLiteral("00:00")) + 6;
+        const qreal label_width = fontMetrics().horizontalAdvance(QStringLiteral("00:00")) + kDayLabelGap;
         const int label_every = std::max(1, static_cast<int>(std::ceil(label_width / spacing)));
         int index = 0;
-        for (auto tick = start_; tick < end_; tick += std::chrono::hours(1), ++index) {
+        for (auto tick = start_; tick < end_; tick += kDayTickInterval, ++index) {
             const bool label = index % label_every == 0 && (tick == start_ || x_at(end_) - x_at(tick) >= label_width);
             add_tick(x_at(tick), label);
             if (label) add_label(tick_label(tick), x_at(tick));
@@ -294,7 +304,7 @@ void MachinesTab::show_history(Id id) {
     auto* date_controls = new QHBoxLayout;
     date_controls->addWidget(day_button);
     date_controls->addWidget(week_button);
-    date_controls->addSpacing(8);
+    date_controls->addSpacing(kDateControlGap);
     date_controls->addWidget(previous);
     date_controls->addWidget(next);
     date_controls->addWidget(today);

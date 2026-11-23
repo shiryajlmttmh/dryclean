@@ -9,6 +9,7 @@
 namespace {
 
 constexpr std::size_t kMinBatchesToMerge = 2;
+constexpr Hours kPrioritySlackOffsetHours = 1.0;
 
 const Machine* find_machine(const std::vector<Machine>& machines, Id id) {
     for (const Machine& machine : machines) {
@@ -168,7 +169,7 @@ Hours BatchPlanner::compute_slack(const PlanItem& item, TimePoint now) const {
 }
 
 double BatchPlanner::compute_priority(const PlanItem& item, TimePoint now) const {
-    return 1.0 / (1.0 + std::max(compute_slack(item, now), 0.0));
+    return 1.0 / (kPrioritySlackOffsetHours + std::max(compute_slack(item, now), 0.0));
 }
 
 void BatchPlanner::prioritize(std::vector<PlanItem>& items, const ConflictGraph& graph, TimePoint now) const {

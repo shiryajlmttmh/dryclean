@@ -21,6 +21,10 @@
 
 namespace {
 
+constexpr int kCardBodyIndent = 12;
+constexpr int kCardBodyTopMargin = 2;
+constexpr int kDetailsMaxHeight = 220;
+
 enum ConflictColumn { ConflictFirst, ConflictSecond, ConflictReasons };
 constexpr std::array kConflictHeaders{"Первое изделие", "Второе изделие", "Причины"};
 
@@ -86,7 +90,7 @@ QVBoxLayout* add_card(QVBoxLayout* panel, const QString& title, const QString& s
     add_text(layout, summary);
     auto* contents = new QWidget(frame);
     auto* body = new QVBoxLayout(contents);
-    body->setContentsMargins(12, 2, 0, 0);
+    body->setContentsMargins(kCardBodyIndent, kCardBodyTopMargin, 0, 0);
     layout->addWidget(contents);
     connect_disclosure(toggle, contents);
     toggle->setChecked(expanded);
@@ -123,8 +127,8 @@ PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     auto* batches = make_card_panel(batch_cards_, this);
     panels->addWidget(make_titled_box(QStringLiteral("Ожидают планирования"), queue, panels));
     panels->addWidget(make_titled_box(QStringLiteral("Партии плана"), batches, panels));
-    panels->setStretchFactor(0, 1);
-    panels->setStretchFactor(1, 1);
+    panels->setStretchFactor(0, kStretch);
+    panels->setStretchFactor(1, kStretch);
     layout->addWidget(panels, kStretch);
 
     details_button_ = new QToolButton(this);
@@ -132,7 +136,7 @@ PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
     details_button_->setAccessibleDescription(QStringLiteral("Конфликты изделий и прогнозы по заказам"));
     auto* details = new QTabWidget(this);
     details_ = details;
-    details->setMaximumHeight(220);
+    details->setMaximumHeight(kDetailsMaxHeight);
     conflicts_table_ = new TableWidget(make_headers(kConflictHeaders), details);
     conflicts_table_->set_empty_text(QStringLiteral("Конфликтов между изделиями нет."));
     forecasts_table_ = new TableWidget(make_headers(kForecastHeaders), details);

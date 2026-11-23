@@ -10,6 +10,12 @@
 #include "record_io.h"
 #include "validation.h"
 
+namespace {
+
+constexpr double kMaxFillRatio = 1.0;
+
+}
+
 Batch::Batch(std::vector<Id> item_ids, Id machine_id, ServiceType service_type, double total_weight_kg,
              double fill_ratio, TimePoint planned_start_at, TimePoint planned_ready_at, Id created_by)
     : item_ids_(std::move(item_ids)),
@@ -108,7 +114,7 @@ void Batch::validate() const {
     if (!std::isfinite(total_weight_kg_) || total_weight_kg_ <= 0.0) {
         throw InvalidInputException("total_weight_kg", "масса партии должна быть больше нуля");
     }
-    if (!std::isfinite(fill_ratio_) || fill_ratio_ <= 0.0 || fill_ratio_ > 1.0 + EPS) {
+    if (!std::isfinite(fill_ratio_) || fill_ratio_ <= 0.0 || fill_ratio_ > kMaxFillRatio + EPS) {
         throw InvalidInputException("fill_ratio", "заполнение партии должно быть больше нуля и не больше единицы");
     }
     if (planned_ready_at_ <= planned_start_at_) {

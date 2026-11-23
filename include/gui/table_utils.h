@@ -46,9 +46,10 @@ private:
         QString name;
     };
     std::optional<FocusedAction> focused_action_;
-    int sort_column_ = -1;
+    static constexpr int kNoColumn = -1;
+    int sort_column_ = kNoColumn;
     Qt::SortOrder sort_order_ = Qt::DescendingOrder;
-    int actions_column_ = -1;
+    int actions_column_ = kNoColumn;
     QString empty_text_;
 };
 

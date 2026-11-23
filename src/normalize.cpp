@@ -14,6 +14,13 @@ constexpr std::size_t kSubscriberHeadLength = 3;
 constexpr std::size_t kSubscriberPairLength = 2;
 constexpr std::size_t kFirstSubscriberBoundary = kMobileCodeLength + kSubscriberHeadLength;
 constexpr std::size_t kSecondSubscriberBoundary = kFirstSubscriberBoundary + kSubscriberPairLength;
+constexpr std::string_view kFullRangeMobileCode33 = "33";
+constexpr std::string_view kFullRangeMobileCode44 = "44";
+constexpr std::string_view kRestrictedMobileCode25 = "25";
+constexpr std::string_view kRestrictedMobileCode29 = "29";
+constexpr std::string_view kAllowedSubscriberStartsFor25 = "5679";
+constexpr std::string_view kAllowedSubscriberStartsFor29 = "12356789";
+constexpr std::size_t kMaxPhoneParenthesisPairs = 1;
 constexpr std::size_t kMaxLoginLength = 32;
 constexpr const char* kBlanks = " \t\r\n";
 
@@ -58,11 +65,9 @@ bool is_digit(char c) { return c >= '0' && c <= '9'; }
 bool has_mobile_prefix(std::string_view national) {
     const auto code = national.substr(0, kMobileCodeLength);
     const char first_digit = national[kMobileCodeLength];
-    // Active mobile ranges in the E.164 plan published by Beltelecom.
-    // https://www.beltelecom.by/en/private/telephony/phone-codes
-    return code == "33" || code == "44" ||
-           (code == "25" && std::string_view("5679").find(first_digit) != std::string_view::npos) ||
-           (code == "29" && std::string_view("12356789").find(first_digit) != std::string_view::npos);
+    return code == kFullRangeMobileCode33 || code == kFullRangeMobileCode44 ||
+           (code == kRestrictedMobileCode25 && kAllowedSubscriberStartsFor25.find(first_digit) != std::string_view::npos) ||
+           (code == kRestrictedMobileCode29 && kAllowedSubscriberStartsFor29.find(first_digit) != std::string_view::npos);
 }
 
 [[noreturn]] void invalid_phone_parentheses() {
@@ -86,7 +91,7 @@ void check_phone_parentheses(std::string_view text) {
     if (open_count != 0) {
         throw InvalidInputException("phone", "пропущена закрывающая скобка «)».");
     }
-    if (pair_count > 1) {
+    if (pair_count > kMaxPhoneParenthesisPairs) {
         throw InvalidInputException("phone", "в номере допустима одна пара скобок вокруг кода оператора. Пример - (29).");
     }
 }

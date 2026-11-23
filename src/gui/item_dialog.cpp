@@ -34,6 +34,9 @@ namespace {
 
 constexpr int kDialogWidth = 620;
 constexpr int kDefectListHeight = 130;
+constexpr int kDefectRowHorizontalMargin = 4;
+constexpr int kDefectRowVerticalMargin = 1;
+constexpr int kNoApplicableService = -1;
 constexpr int kWeightDecimals = 2;
 constexpr int kAreaDecimals = 1;
 constexpr double kMinWeightKg = 0.1;
@@ -46,11 +49,12 @@ constexpr double kDefaultAreaCm2 = 5.0;
 constexpr double kAreaStepCm2 = 1.0;
 
 enum Step { ItemStep, ConditionStep, ServicesStep };
+enum StageColumn { StageNumber, StageService };
 
-constexpr std::array<const char*, 3> kStepTitles{"Изделие", "Состояние", "Услуги и порядок обработки"};
+constexpr std::array kStepTitles{"Изделие", "Состояние", "Услуги и порядок обработки"};
 constexpr std::array kServiceChoices{ServiceType::DryCleaning, ServiceType::WetCleaning,
                                      ServiceType::StainRemoval, ServiceType::Leather};
-constexpr std::array<const char*, 2> kStageHeaders{"Этап", "Услуга"};
+constexpr std::array kStageHeaders{"Этап", "Услуга"};
 
 void load_catalog(QComboBox* box, const auto& catalog, const std::string& selected, const QString& placeholder) {
     for (const auto& entry : catalog) {
@@ -291,12 +295,13 @@ void ItemDialog::show_defects() {
         item->setData(Qt::AccessibleTextRole, description);
         auto* row = new QWidget(defects_list_);
         auto* layout = new QHBoxLayout(row);
-        layout->setContentsMargins(4, 1, 4, 1);
+        layout->setContentsMargins(kDefectRowHorizontalMargin, kDefectRowVerticalMargin,
+                                   kDefectRowHorizontalMargin, kDefectRowVerticalMargin);
         auto* label = new QLabel(description, row);
         label->setTextFormat(Qt::PlainText);
         label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         label->setToolTip(description);
-        layout->addWidget(label, 1);
+        layout->addWidget(label, kStretch);
         add_remove_action(layout, QStringLiteral("Удалить пятно или дефект «%1»").arg(qt_convert::text(defect.name)),
                           [this, item] { remove_defect(item); });
         item->setSizeHint(row->minimumSizeHint());
@@ -360,7 +365,7 @@ void ItemDialog::refresh_stages() {
         const QSignalBlocker blocker(service_box_);
         const auto previous = service_box_->currentData();
         service_box_->clear();
-        int first_applicable = -1;
+        int first_applicable = kNoApplicableService;
         for (ServiceType type : kServiceChoices) {
             if (std::ranges::find(stages_, type, &Stage::service) != stages_.end()) continue;
             const auto blocked = service_block(type);
@@ -382,15 +387,15 @@ void ItemDialog::refresh_stages() {
     bool has_unavailable = false;
     for (int row = 0; row < stages_table_->rowCount(); ++row) {
         const auto& [id, service] = stages_[row];
-        set_cell(stages_table_, row, 0, row + 1);
+        set_cell(stages_table_, row, StageNumber, row + 1);
         const auto blocked = service_block(service);
         auto name = qt_convert::text(display_name(service));
         if (!blocked.isEmpty()) {
             has_unavailable = true;
             name += QStringLiteral(" - недоступна");
         }
-        set_cell(stages_table_, row, 1, name);
-        if (!blocked.isEmpty()) stages_table_->item(row, 1)->setToolTip(blocked);
+        set_cell(stages_table_, row, StageService, name);
+        if (!blocked.isEmpty()) stages_table_->item(row, StageService)->setToolTip(blocked);
 
         auto* actions = make_row_actions(stages_table_, row, id);
         auto* up = add_row_action(actions, QStringLiteral("↑"), [this, id] { move_stage(id, -1); },

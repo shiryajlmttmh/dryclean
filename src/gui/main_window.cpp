@@ -48,9 +48,15 @@ constexpr int kAllStatuses = -3;
 constexpr int kOverdueOrders = -2;
 constexpr double kNoDiscount = 0.0;
 constexpr int kStatusRightMargin = 16;
+constexpr int kStatusMessageDurationMs = 5000;
+constexpr int kOrderFilterGroupGap = 6;
+constexpr int kOrderHistoryWidth = 580;
+constexpr int kOrderHistoryHeight = 320;
 constexpr int kClockRefreshMs = 30000;
 constexpr int kPopupRefreshRetryMs = 250;
 constexpr const char* kStatusSeparator = "   |   ";
+
+enum OrderHistoryColumn { HistoryTimestamp, HistoryStatus, HistoryEmployee };
 
 enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
 
@@ -172,9 +178,9 @@ QWidget* MainWindow::build_orders_tab() {
 
     auto* separator = new QFrame(page);
     separator->setFrameShape(QFrame::VLine);
-    filters->addSpacing(6);
+    filters->addSpacing(kOrderFilterGroupGap);
     filters->addWidget(separator);
-    filters->addSpacing(6);
+    filters->addSpacing(kOrderFilterGroupGap);
     add_filter(QStringLiteral("Просроченные"), kOverdueOrders);
     add_filter(QStringLiteral("Все статусы"), kAllStatuses);
     filters->addStretch();
@@ -367,7 +373,7 @@ void MainWindow::show_order_items(Id id) {
 void MainWindow::show_order_history(Id id) {
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("История заказа №%1").arg(id));
-    dialog.resize(580, 320);
+    dialog.resize(kOrderHistoryWidth, kOrderHistoryHeight);
     auto* layout = new QVBoxLayout(&dialog);
     auto* table = new TableWidget({QStringLiteral("Дата и время"), QStringLiteral("Статус"),
                                    QStringLiteral("Сотрудник")}, &dialog);
@@ -375,9 +381,9 @@ void MainWindow::show_order_history(Id id) {
     table->reset_rows(static_cast<int>(history.size()));
     int row = 0;
     for (const StatusRecord& record : history) {
-        set_time_cell(table, row, 0, record.timestamp());
-        set_cell(table, row, 1, qt_convert::text(display_name(record.status())));
-        set_cell(table, row, 2, qt_convert::text(shop_.employees().get(record.employee_id()).name()));
+        set_time_cell(table, row, HistoryTimestamp, record.timestamp());
+        set_cell(table, row, HistoryStatus, qt_convert::text(display_name(record.status())));
+        set_cell(table, row, HistoryEmployee, qt_convert::text(shop_.employees().get(record.employee_id()).name()));
         ++row;
     }
     layout->addWidget(table);
@@ -391,14 +397,14 @@ void MainWindow::show_order_history(Id id) {
 void MainWindow::mark_order_ready(Id id) {
     if (run_guarded(this, [&] { shop_.change_order_status(id, OrderStatus::Ready, employee_id_, qt_convert::now()); })) {
         refresh();
-        statusBar()->showMessage(QStringLiteral("Заказ №%1 готов.").arg(id), 5000);
+        statusBar()->showMessage(QStringLiteral("Заказ №%1 готов.").arg(id), kStatusMessageDurationMs);
     }
 }
 
 void MainWindow::issue_order(Id id) {
     if (run_guarded(this, [&] { shop_.issue_order(id, employee_id_, qt_convert::now()); })) {
         refresh();
-        statusBar()->showMessage(QStringLiteral("Заказ №%1 выдан клиенту.").arg(id), 5000);
+        statusBar()->showMessage(QStringLiteral("Заказ №%1 выдан клиенту.").arg(id), kStatusMessageDurationMs);
     }
 }
 
@@ -409,7 +415,7 @@ void MainWindow::remove_order(Id id) {
     }
     if (run_guarded(this, [this, id] { shop_.remove_order(id, employee_id_); })) {
         refresh();
-        statusBar()->showMessage(QStringLiteral("Заказ №%1 удалён.").arg(id), 5000);
+        statusBar()->showMessage(QStringLiteral("Заказ №%1 удалён.").arg(id), kStatusMessageDurationMs);
     }
 }
 

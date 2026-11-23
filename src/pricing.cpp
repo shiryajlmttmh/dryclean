@@ -2,16 +2,55 @@
 
 #include "exceptions.h"
 
+namespace {
+
+constexpr double kDryCleaningTariff = 65.0;
+constexpr double kWetCleaningTariff = 55.0;
+constexpr double kStainRemovalTariff = 15.0;
+constexpr double kLeatherTariff = 65.0;
+
+constexpr Hours kDryCleaningTurnaroundHours = 144.0;
+constexpr Hours kWetCleaningTurnaroundHours = 120.0;
+constexpr Hours kStainRemovalTurnaroundHours = 48.0;
+constexpr Hours kLeatherTurnaroundHours = 144.0;
+
+constexpr Hours kDryCleaningCycleHours = 3.0;
+constexpr Hours kWetCleaningCycleHours = 4.0;
+constexpr Hours kStainRemovalCycleHours = 2.0;
+constexpr Hours kLeatherCycleHours = 8.0;
+
+constexpr double kBasicMaterialCostFactor = 1.0;
+constexpr double kDelicateMaterialCostFactor = 1.2;
+constexpr double kLeatherSuedeCostFactor = 1.15;
+constexpr double kSheepskinVelourCostFactor = 1.3;
+constexpr double kFurCostFactor = 1.45;
+
+constexpr double kBasicMaterialTimeFactor = 1.0;
+constexpr double kDelicateMaterialTimeFactor = 1.2;
+constexpr double kLeatherSuedeTimeFactor = 1.3;
+constexpr double kSheepskinVelourTimeFactor = 1.3;
+constexpr double kFurTimeFactor = 1.5;
+
+constexpr double kLightSoilCostFactor = 1.0;
+constexpr double kMediumSoilCostFactor = 1.15;
+constexpr double kHeavySoilCostFactor = 1.3;
+
+constexpr double kLightStainSurcharge = 10.0;
+constexpr double kHardStainSurcharge = 15.0;
+constexpr double kSpecialStainSurcharge = 20.0;
+
+}
+
 double tariff(ServiceType service) {
     switch (service) {
         case ServiceType::DryCleaning:
-            return 65.0;
+            return kDryCleaningTariff;
         case ServiceType::WetCleaning:
-            return 55.0;
+            return kWetCleaningTariff;
         case ServiceType::StainRemoval:
-            return 15.0;
+            return kStainRemovalTariff;
         case ServiceType::Leather:
-            return 65.0;
+            return kLeatherTariff;
     }
     throw InvalidInputException("ServiceType", "неизвестное значение");
 }
@@ -19,13 +58,13 @@ double tariff(ServiceType service) {
 Hours base_hours(ServiceType service) {
     switch (service) {
         case ServiceType::DryCleaning:
-            return 144.0;
+            return kDryCleaningTurnaroundHours;
         case ServiceType::WetCleaning:
-            return 120.0;
+            return kWetCleaningTurnaroundHours;
         case ServiceType::StainRemoval:
-            return 48.0;
+            return kStainRemovalTurnaroundHours;
         case ServiceType::Leather:
-            return 144.0;
+            return kLeatherTurnaroundHours;
     }
     throw InvalidInputException("ServiceType", "неизвестное значение");
 }
@@ -33,13 +72,13 @@ Hours base_hours(ServiceType service) {
 Hours cycle_hours(ServiceType service) {
     switch (service) {
         case ServiceType::DryCleaning:
-            return 3.0;
+            return kDryCleaningCycleHours;
         case ServiceType::WetCleaning:
-            return 4.0;
+            return kWetCleaningCycleHours;
         case ServiceType::StainRemoval:
-            return 2.0;
+            return kStainRemovalCycleHours;
         case ServiceType::Leather:
-            return 8.0;
+            return kLeatherCycleHours;
     }
     throw InvalidInputException("ServiceType", "неизвестное значение");
 }
@@ -47,15 +86,15 @@ Hours cycle_hours(ServiceType service) {
 double material_cost_k(MaterialGroup group) {
     switch (group) {
         case MaterialGroup::Basic:
-            return 1.0;
+            return kBasicMaterialCostFactor;
         case MaterialGroup::Delicate:
-            return 1.2;
+            return kDelicateMaterialCostFactor;
         case MaterialGroup::LeatherSuede:
-            return 1.15;
+            return kLeatherSuedeCostFactor;
         case MaterialGroup::SheepskinVelour:
-            return 1.3;
+            return kSheepskinVelourCostFactor;
         case MaterialGroup::NaturalFur:
-            return 1.45;
+            return kFurCostFactor;
     }
     throw InvalidInputException("MaterialGroup", "неизвестное значение");
 }
@@ -63,15 +102,15 @@ double material_cost_k(MaterialGroup group) {
 double material_time_k(MaterialGroup group) {
     switch (group) {
         case MaterialGroup::Basic:
-            return 1.0;
+            return kBasicMaterialTimeFactor;
         case MaterialGroup::Delicate:
-            return 1.2;
+            return kDelicateMaterialTimeFactor;
         case MaterialGroup::LeatherSuede:
-            return 1.3;
+            return kLeatherSuedeTimeFactor;
         case MaterialGroup::SheepskinVelour:
-            return 1.3;
+            return kSheepskinVelourTimeFactor;
         case MaterialGroup::NaturalFur:
-            return 1.5;
+            return kFurTimeFactor;
     }
     throw InvalidInputException("MaterialGroup", "неизвестное значение");
 }
@@ -79,11 +118,11 @@ double material_time_k(MaterialGroup group) {
 double soil_k(SoilLevel level) {
     switch (level) {
         case SoilLevel::Light:
-            return 1.0;
+            return kLightSoilCostFactor;
         case SoilLevel::Medium:
-            return 1.15;
+            return kMediumSoilCostFactor;
         case SoilLevel::Heavy:
-            return 1.3;
+            return kHeavySoilCostFactor;
     }
     throw InvalidInputException("SoilLevel", "неизвестное значение");
 }
@@ -91,11 +130,11 @@ double soil_k(SoilLevel level) {
 double stain_surcharge(StainClass stain_class) {
     switch (stain_class) {
         case StainClass::Light:
-            return 10.0;
+            return kLightStainSurcharge;
         case StainClass::Hard:
-            return 15.0;
+            return kHardStainSurcharge;
         case StainClass::Special:
-            return 20.0;
+            return kSpecialStainSurcharge;
     }
     throw InvalidInputException("StainClass", "неизвестное значение");
 }
