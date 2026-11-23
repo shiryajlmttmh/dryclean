@@ -49,6 +49,21 @@ void check_optional_text(const char* field_name, const std::string& value) {
     }
 }
 
+void check_services(const std::vector<ServiceType>& services) {
+    if (services.empty() || services.size() > kMaxNestedElements) {
+        throw InvalidInputException("services", "задайте последовательность допустимых услуг");
+    }
+    std::set<ServiceType> used;
+    for (ServiceType type : services) {
+        if (!is_valid(type)) {
+            throw InvalidInputException("services", "задайте последовательность допустимых услуг");
+        }
+        if (!used.insert(type).second) {
+            throw InvalidInputException("services", "каждую услугу можно добавить к изделию только один раз");
+        }
+    }
+}
+
 void write_defect(RecordWriter& writer, const Item::Defect& defect) {
     writer.put_token(to_string(defect.type));
     writer.put_string(defect.name);
@@ -182,10 +197,7 @@ void Item::set_services(std::vector<ServiceType> services) {
     if (is_batched() || !completed_batches_.empty()) {
         throw InvalidInputException("services", "нельзя менять услуги изделия в обработке");
     }
-    if (services.empty() || services.size() > kMaxNestedElements ||
-        std::any_of(services.begin(), services.end(), [](ServiceType type) { return !is_valid(type); })) {
-        throw InvalidInputException("services", "задайте последовательность допустимых услуг");
-    }
+    check_services(services);
     services_ = std::move(services);
 }
 
@@ -230,9 +242,8 @@ std::string Item::make_tag(Id order_id, std::size_t index) {
 }
 
 void Item::validate() const {
-    if (services_.empty() || services_.size() > kMaxNestedElements ||
-        std::any_of(services_.begin(), services_.end(), [](ServiceType type) { return !is_valid(type); }) ||
-        completed_batches_.size() > services_.size()) {
+    check_services(services_);
+    if (completed_batches_.size() > services_.size()) {
         throw InvalidInputException("services", "некорректная последовательность услуг");
     }
     std::set<Id> completed;

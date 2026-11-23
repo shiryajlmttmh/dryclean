@@ -28,7 +28,6 @@
 #include "gui/suggestions.h"
 #include "gui/table_utils.h"
 #include "item_catalog.h"
-#include "record_io.h"
 #include "shop.h"
 
 namespace {
@@ -49,6 +48,8 @@ constexpr double kAreaStepCm2 = 1.0;
 enum Step { ItemStep, ConditionStep, ServicesStep };
 
 constexpr std::array<const char*, 3> kStepTitles{"Изделие", "Состояние", "Услуги и порядок обработки"};
+constexpr std::array kServiceChoices{ServiceType::DryCleaning, ServiceType::WetCleaning,
+                                     ServiceType::StainRemoval, ServiceType::Leather};
 constexpr std::array<const char*, 2> kStageHeaders{"Этап", "Услуга"};
 
 void load_catalog(QComboBox* box, const auto& catalog, const std::string& selected, const QString& placeholder) {
@@ -190,8 +191,7 @@ QWidget* ItemDialog::build_services_page() {
     auto* page = new QWidget(pages_);
     service_box_ = new QComboBox(page);
     service_box_->setAccessibleName(QStringLiteral("Услуга"));
-    fill_enum_combo<ServiceType>(service_box_, {ServiceType::DryCleaning, ServiceType::WetCleaning,
-                                               ServiceType::StainRemoval, ServiceType::Leather});
+    service_box_->setPlaceholderText(QStringLiteral("Все услуги добавлены"));
     add_stage_button_ = new QPushButton(QStringLiteral("Добавить этап"), page);
     service_hint_ = new QLabel(page);
     service_hint_->setWordWrap(true);
@@ -346,10 +346,9 @@ QString ItemDialog::service_block(ServiceType service) const {
 }
 
 void ItemDialog::refresh_service_choice() {
-    const auto blocked = service_block(enum_value<ServiceType>(service_box_));
-    const bool has_room = stages_.size() < kMaxNestedElements;
-    add_stage_button_->setEnabled(blocked.isEmpty() && has_room);
-    const QString hint = has_room ? blocked : QStringLiteral("Достигнут предел числа этапов.");
+    const bool has_choice = service_box_->currentIndex() >= 0;
+    const QString hint = has_choice ? service_block(enum_value<ServiceType>(service_box_)) : QString();
+    add_stage_button_->setEnabled(has_choice && hint.isEmpty());
     service_hint_->setText(hint);
     service_hint_->setVisible(!hint.isEmpty());
     add_stage_button_->setToolTip(hint);
@@ -359,14 +358,23 @@ void ItemDialog::refresh_service_choice() {
 void ItemDialog::refresh_stages() {
     {
         const QSignalBlocker blocker(service_box_);
-        for (int index = 0; index < service_box_->count(); ++index) {
-            const auto type = static_cast<ServiceType>(service_box_->itemData(index).toInt());
+        const auto previous = service_box_->currentData();
+        service_box_->clear();
+        int first_applicable = -1;
+        for (ServiceType type : kServiceChoices) {
+            if (std::ranges::find(stages_, type, &Stage::service) != stages_.end()) continue;
             const auto blocked = service_block(type);
             auto label = qt_convert::text(display_name(type));
             if (!blocked.isEmpty()) label += QStringLiteral(" - недоступна");
-            service_box_->setItemText(index, label);
+            const int index = service_box_->count();
+            service_box_->addItem(label, static_cast<int>(type));
             service_box_->setItemData(index, blocked, Qt::ToolTipRole);
+            if (blocked.isEmpty() && first_applicable < 0) first_applicable = index;
         }
+        const int previous_index = service_box_->findData(previous);
+        if (previous_index >= 0) service_box_->setCurrentIndex(previous_index);
+        else if (first_applicable >= 0) service_box_->setCurrentIndex(first_applicable);
+        else if (service_box_->count() > 0) service_box_->setCurrentIndex(0);
     }
     refresh_service_choice();
 
@@ -406,8 +414,9 @@ void ItemDialog::refresh_stages() {
 }
 
 void ItemDialog::add_stage() {
+    if (service_box_->currentIndex() < 0) return;
     const auto service = enum_value<ServiceType>(service_box_);
-    if (!service_block(service).isEmpty() || stages_.size() >= kMaxNestedElements) return;
+    if (!service_block(service).isEmpty() || std::ranges::find(stages_, service, &Stage::service) != stages_.end()) return;
     stages_.push_back({next_stage_id_++, service});
     refresh_stages();
 }
