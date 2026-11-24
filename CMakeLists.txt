@@ -54,6 +54,7 @@ add_executable(dryclean
     src/gui/order_items_dialog.cpp
     src/gui/table_utils.cpp
     src/gui/helpers.cpp
+    src/gui/control_style.cpp
     src/gui/suggestions.cpp
     src/gui/planning_tab.cpp
     src/gui/batches_tab.cpp
@@ -75,6 +76,7 @@ add_executable(dryclean
     include/gui/table_utils.h
     include/gui/enum_combo.h
     include/gui/helpers.h
+    include/gui/control_style.h
     include/gui/planning_tab.h
     include/gui/batches_tab.h
     include/gui/apply_dialog.h

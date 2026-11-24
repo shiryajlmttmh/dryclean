@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <QStandardPaths>
 
+#include "gui/control_style.h"
 #include "gui/login_dialog.h"
 #include "gui/main_window.h"
 #include "gui/qt_convert.h"
@@ -17,6 +18,7 @@ constexpr const char* kOrganizationName = "BSUIR";
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
+    install_control_style(app);
     QApplication::setApplicationName(kApplicationName);
     QApplication::setOrganizationName(kOrganizationName);
 
