@@ -124,24 +124,32 @@ OrderDraft OrderDialog::make_draft() const {
     return draft;
 }
 
-std::optional<OrderQuote> OrderDialog::make_quote() {
-    error_label_->clear();
-    if (items_.empty() || selected_client() == 0) {
-        return std::nullopt;
+std::optional<OrderQuote> OrderDialog::make_quote(QString& unavailable) const {
+    if (!has_permission(shop_, employee_id_, Permission::AcceptOrders)) {
+        unavailable = QStringLiteral("Для приёма заказов нужны права приёмщика.");
+    } else if (client_box_->count() == 0) {
+        unavailable = QStringLiteral("Добавьте клиента на вкладке «Клиенты», затем откройте приём заказа снова.");
+    } else if (selected_client() == 0) {
+        unavailable = QStringLiteral("Выберите клиента из списка по имени.");
+    } else if (items_.empty()) {
+        unavailable = QStringLiteral("Добавьте хотя бы одно изделие, чтобы принять заказ.");
     }
+    if (!unavailable.isEmpty()) return std::nullopt;
     try {
         return shop_.quote_order(make_draft(), qt_convert::now());
     } catch (const ShopException& error) {
-        error_label_->setText(qt_convert::text(error.what()));
+        unavailable = qt_convert::text(error.what());
         return std::nullopt;
     }
 }
 
 void OrderDialog::refresh() {
-    const std::optional<OrderQuote> quote = make_quote();
+    error_label_->clear();
+    QString unavailable;
+    const std::optional<OrderQuote> quote = make_quote(unavailable);
     show_items(quote);
     show_summary(quote);
-    accept_button_->setEnabled(quote.has_value());
+    set_action_availability(accept_button_, unavailable);
 }
 
 void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
@@ -171,15 +179,7 @@ void OrderDialog::show_items(const std::optional<OrderQuote>& quote) {
 
 void OrderDialog::show_summary(const std::optional<OrderQuote>& quote) {
     if (!quote) {
-        if (client_box_->count() == 0) {
-            summary_label_->setText(QStringLiteral("Добавьте клиента на вкладке «Клиенты», затем откройте приём заказа снова."));
-        } else if (selected_client() == 0) {
-            summary_label_->setText(QStringLiteral("Выберите клиента из списка по имени."));
-        } else if (items_.empty()) {
-            summary_label_->setText(QStringLiteral("Добавьте хотя бы одно изделие, чтобы принять заказ."));
-        } else {
-            summary_label_->clear();
-        }
+        summary_label_->clear();
         return;
     }
     summary_label_->setText(QStringLiteral("Скидка клиента: %1\nИтого: %2\nСрок выполнения: %3\nГотовность не позже: %4")

@@ -246,18 +246,18 @@ private:
 
 MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast& forecast, QWidget* parent)
     : TableTab(shop, employee_id, Permission::ManageStaff, make_headers(kMachineHeaders),
-               {MachineName}, parent, true), forecast_(forecast) {}
+               {MachineName}, parent), forecast_(forecast) {}
 
 void MachinesTab::refresh_history() { emit forecast_changed(); }
 
 void MachinesTab::add_extra_actions(QHBoxLayout* actions, Id id) {
     add_row_action(actions, QStringLiteral("Занятость"), [this, id] { show_history(id); });
-    if (is_allowed()) {
-        auto* menu = add_more_actions(actions, QStringLiteral("Обслуживание машины №%1").arg(id));
-        auto* service = menu->addAction(QStringLiteral("Выполнить ТО"), this, [this, id] { service_machine(id); });
-        if (!shop_.can_service_machine(id, forecast_.now)) {
-            set_menu_action_unavailable(service, QStringLiteral("сначала завершите все партии машины"));
-        }
+    auto* menu = add_more_actions(actions, QStringLiteral("Обслуживание машины №%1").arg(id));
+    auto* service = menu->addAction(QStringLiteral("Выполнить ТО"), this, [this, id] { service_machine(id); });
+    if (!is_allowed()) {
+        set_menu_action_unavailable(service, QStringLiteral("Для обслуживания машины нужны права администратора."));
+    } else if (!shop_.can_service_machine(id, forecast_.now)) {
+        set_menu_action_unavailable(service, QStringLiteral("Сначала завершите все партии машины."));
     }
 }
 

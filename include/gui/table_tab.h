@@ -8,7 +8,6 @@
 
 class QDialog;
 class QHBoxLayout;
-class QLabel;
 class QPushButton;
 class TableWidget;
 
@@ -17,7 +16,7 @@ class TableTab : public QWidget {
 
 public:
     TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-             std::initializer_list<int> text_columns, QWidget* parent, bool has_view_actions = false);
+             std::initializer_list<int> text_columns, QWidget* parent);
 
 public slots:
     void refresh();
@@ -35,6 +34,7 @@ protected:
 
     void show_dialog(QDialog& dialog);
     bool is_allowed() const;
+    TableWidget& table() const noexcept;
 
     DryCleaningShop& shop_;
     Id employee_id_;
@@ -44,7 +44,5 @@ private:
 
     TableWidget* table_;
     Permission permission_;
-    bool has_view_actions_;
     QPushButton* add_button_;
-    QLabel* read_only_hint_;
 };

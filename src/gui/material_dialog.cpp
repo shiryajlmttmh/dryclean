@@ -5,7 +5,6 @@
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
-#include <QLabel>
 #include <QLineEdit>
 
 #include "display.h"
@@ -42,19 +41,14 @@ MaterialDialog::MaterialDialog(const DryCleaningShop& shop, const QString& title
         make_spin_box(this, kMinConsumption, kMaxConsumption, kConsumptionDecimals, kConsumptionStep, QString(),
                       initial.consumption_per_kg() > 0.0 ? initial.consumption_per_kg() : kDefaultConsumption);
 
-    unit_edit_->setEnabled(is_new);
+    set_action_availability(unit_edit_, is_new ? QString() : QStringLiteral("Единица измерения задана при создании."));
     if (is_new) set_suggestions(unit_edit_, input_suggestions(shop, SuggestionKind::Unit));
-    stock_edit_->setEnabled(is_new);
+    set_action_availability(stock_edit_, is_new ? QString()
+        : QStringLiteral("Остаток меняется через «Пополнить» и «Списать»."));
 
     form()->addRow(QStringLiteral("Название:"), name_edit_);
     form()->addRow(QStringLiteral("Единица измерения:"), unit_edit_);
     form()->addRow(QStringLiteral("Остаток:"), stock_edit_);
-    if (!is_new) {
-        auto* hint = new QLabel(QStringLiteral(
-            "Единица измерения задана при создании. Остаток меняется через «Пополнить» и «Списать»."), this);
-        hint->setWordWrap(true);
-        form()->addRow(hint);
-    }
     form()->addRow(QStringLiteral("Расход на 1 кг белья:"), consumption_edit_);
     bool first_row = true;
     for (const ServiceType service : kServices) {

@@ -1,6 +1,7 @@
 #include "gui/materials_tab.h"
 
 #include <QTabBar>
+#include <QHeaderView>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -62,12 +63,19 @@ MaterialsTab::MaterialsTab(DryCleaningShop& shop, Id employee_id, QWidget* paren
     sort_tabs_->setTabData(sort_tabs_->addTab(QStringLiteral("По остатку")), static_cast<int>(MaterialOrder::ByStock));
 
     auto* filters = new QHBoxLayout;
-    filters->addWidget(search_edit_, kStretch);
     filters->addWidget(sort_tabs_);
+    filters->addWidget(search_edit_, kStretch);
     static_cast<QVBoxLayout*>(layout())->insertLayout(1, filters);
 
     connect(search_edit_, &QLineEdit::textChanged, this, &TableTab::refresh);
-    connect(sort_tabs_, &QTabBar::currentChanged, this, &TableTab::refresh);
+    const auto apply_sort = [this] {
+        table().reset_sort();
+        refresh();
+    };
+    connect(sort_tabs_, &QTabBar::currentChanged, this, apply_sort);
+    connect(sort_tabs_, &QTabBar::tabBarClicked, this, [this, apply_sort](int index) {
+        if (index == sort_tabs_->currentIndex() && table().horizontalHeader()->isSortIndicatorShown()) apply_sort();
+    });
 }
 
 void MaterialsTab::fill(TableWidget* table) {
@@ -96,12 +104,15 @@ void MaterialsTab::fill(TableWidget* table) {
 }
 
 void MaterialsTab::add_extra_actions(QHBoxLayout* actions, Id id) {
-    if (!is_allowed()) return;
     auto* menu = add_more_actions(actions, QStringLiteral("Операции со складской записью №%1").arg(id));
-    menu->addAction(QStringLiteral("Пополнить"), this, [this, id] { restock(id); });
+    auto* restock_action = menu->addAction(QStringLiteral("Пополнить"), this, [this, id] { restock(id); });
     auto* write_off = menu->addAction(QStringLiteral("Списать"), this, [this, id] { this->write_off(id); });
-    if (shop_.materials().get(id).stock() <= 0.0) {
-        set_menu_action_unavailable(write_off, QStringLiteral("сначала пополните остаток"));
+    if (!is_allowed()) {
+        const auto reason = QStringLiteral("У вашей роли нет прав на изменение остатков.");
+        set_menu_action_unavailable(restock_action, reason);
+        set_menu_action_unavailable(write_off, reason);
+    } else if (shop_.materials().get(id).stock() <= 0.0) {
+        set_menu_action_unavailable(write_off, QStringLiteral("Сначала пополните остаток материала."));
     }
 }
 

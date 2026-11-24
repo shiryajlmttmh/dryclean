@@ -37,6 +37,12 @@ bool run_guarded(QWidget* parent, const std::function<void()>& action) {
     return false;
 }
 
+void set_action_availability(QWidget* widget, const QString& reason, const QString& available_tooltip) {
+    widget->setToolTip(reason.isEmpty() ? available_tooltip : reason);
+    widget->setAccessibleDescription(reason);
+    widget->setEnabled(reason.isEmpty());
+}
+
 void style_error_label(QLabel* label) {
     const bool dark_background = label->palette().color(QPalette::Window).lightness() < kDarkBackgroundLightnessThreshold;
     label->setStyleSheet(dark_background ? kErrorStyleOnDark : kErrorStyleOnLight);

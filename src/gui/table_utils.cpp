@@ -4,9 +4,9 @@
 #include <QApplication>
 #include <QEvent>
 #include <QHeaderView>
+#include <QHelpEvent>
 #include <QHBoxLayout>
 #include <QKeyEvent>
-#include <QLabel>
 #include <QMenu>
 #include <QPainter>
 #include <QStyle>
@@ -14,8 +14,10 @@
 #include <QStyleOptionViewItem>
 #include <QTimer>
 #include <QToolButton>
+#include <QToolTip>
 #include <algorithm>
 
+#include "gui/helpers.h"
 #include "gui/qt_convert.h"
 
 namespace {
@@ -44,7 +46,6 @@ constexpr int kEmptyTextVerticalInset = 4;
 constexpr int kActionHorizontalMargin = 3;
 constexpr int kActionVerticalMargin = 1;
 constexpr int kActionSpacing = 4;
-constexpr auto kActionReasonName = "actionReason";
 constexpr auto kRecordIdProperty = "recordId";
 
 struct ColumnLimits {
@@ -113,36 +114,33 @@ QIcon edit_icon(const QWidget* widget) {
     return QIcon(pixmap);
 }
 
-void add_action_reason(QHBoxLayout* layout, const QString& reason) {
-    auto* panel = layout->parentWidget();
-    auto* label = panel->findChild<QLabel*>(QString::fromLatin1(kActionReasonName), Qt::FindDirectChildrenOnly);
-    if (!label) {
-        label = new QLabel(reason, panel);
-        label->setObjectName(QString::fromLatin1(kActionReasonName));
-        label->setTextFormat(Qt::PlainText);
-        auto size_policy = label->sizePolicy();
-        size_policy.setRetainSizeWhenHidden(true);
-        label->setSizePolicy(size_policy);
-        layout->insertWidget(0, label);
-    } else if (label->text() != reason) {
-        label->setText(label->text() + QStringLiteral(" · ") + reason);
+class RowActionMenu final : public QMenu {
+public:
+    using QMenu::QMenu;
+
+protected:
+    bool event(QEvent* event) override {
+        if (event->type() == QEvent::ToolTip) {
+            const auto* help = static_cast<QHelpEvent*>(event);
+            auto* action = actionAt(help->pos());
+            if (action && !action->isEnabled()) {
+                QToolTip::showText(help->globalPos(), action->toolTip(), this, actionGeometry(action));
+                return true;
+            }
+        }
+        return QMenu::event(event);
     }
-}
+};
 
 QToolButton* make_action_button(QHBoxLayout* layout, const QString& name, const QString& unavailable) {
     auto* button = new QToolButton(layout->parentWidget());
     button->setFocusPolicy(Qt::StrongFocus);
     button->setAccessibleName(name);
-    button->setAccessibleDescription(unavailable);
-    button->setToolTip(unavailable.isEmpty() ? name : unavailable);
-    button->setEnabled(unavailable.isEmpty());
+    set_action_availability(button, unavailable, name);
     auto size_policy = button->sizePolicy();
     size_policy.setRetainSizeWhenHidden(true);
     button->setSizePolicy(size_policy);
     layout->addWidget(button);
-    if (!unavailable.isEmpty()) {
-        add_action_reason(layout, unavailable);
-    }
     return button;
 }
 
@@ -457,13 +455,12 @@ void add_remove_action(QHBoxLayout* layout, const QString& name, const std::func
 void set_menu_action_unavailable(QAction* action, const QString& reason) {
     action->setEnabled(false);
     action->setToolTip(reason);
-    action->setText(QStringLiteral("%1 - %2").arg(action->text(), reason));
 }
 
 QMenu* add_more_actions(QHBoxLayout* layout, const QString& name) {
     auto* button = make_action_button(layout, name, {});
     button->setText(QStringLiteral("⋯"));
-    auto* menu = new QMenu(button);
+    auto* menu = new RowActionMenu(button);
     button->setMenu(menu);
     button->setPopupMode(QToolButton::InstantPopup);
     return menu;

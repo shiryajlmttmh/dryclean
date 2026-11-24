@@ -15,6 +15,7 @@ class QTableWidget;
 class QWidget;
 
 bool run_guarded(QWidget* parent, const std::function<void()>& action);
+void set_action_availability(QWidget* widget, const QString& reason, const QString& available_tooltip = {});
 void style_error_label(QLabel* label);
 void show_action_refusal(QWidget* parent, const QString& reason);
 bool check_action_permission(QWidget* parent, const DryCleaningShop& shop, Id employee_id, Permission permission);

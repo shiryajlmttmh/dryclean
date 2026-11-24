@@ -70,8 +70,6 @@ private:
 
     QComboBox* service_box_;
     QPushButton* add_stage_button_;
-    QLabel* service_hint_;
-    QLabel* stages_hint_;
     TableWidget* stages_table_;
 
     std::vector<Item::Defect> defects_;

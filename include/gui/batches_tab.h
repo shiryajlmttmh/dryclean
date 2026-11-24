@@ -6,7 +6,6 @@
 
 class QTabBar;
 class QComboBox;
-class QLabel;
 class TableWidget;
 
 class BatchesTab : public QWidget {
@@ -31,6 +30,5 @@ private:
     const ShopForecast& forecast_;
     QTabBar* filter_tabs_;
     QComboBox* stage_filter_;
-    QLabel* read_only_hint_;
     TableWidget* table_;
 };

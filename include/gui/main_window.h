@@ -58,7 +58,6 @@ private:
     QLineEdit* client_search_ = nullptr;
     TableWidget* clients_table_ = nullptr;
     QPushButton* add_client_button_ = nullptr;
-    QLabel* clients_read_only_hint_ = nullptr;
     QButtonGroup* order_filters_ = nullptr;
     QPushButton* accept_order_button_ = nullptr;
     PlanningTab* planning_tab_ = nullptr;

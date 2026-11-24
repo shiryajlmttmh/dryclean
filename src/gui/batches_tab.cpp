@@ -1,7 +1,6 @@
 #include "gui/batches_tab.h"
 
 #include <QComboBox>
-#include <QLabel>
 #include <QSignalBlocker>
 #include <QTabBar>
 #include <QToolButton>
@@ -98,8 +97,6 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast
     for (BatchStatus stage : {BatchStatus::Scheduled, BatchStatus::InProgress, BatchStatus::AwaitingConfirmation}) {
         stage_filter_->addItem(qt_convert::text(display_name(stage)), static_cast<int>(stage));
     }
-    read_only_hint_ = new QLabel(QStringLiteral("Для запуска и завершения партий нужны права оператора."), this);
-    read_only_hint_->setWordWrap(true);
     table_ = new TableWidget(make_headers(kBatchHeaders), this, true);
     table_->set_text_columns({BatchMachine, BatchService, BatchItems});
     const auto timestamp_sample = QString::fromLatin1(kTimestampWidthSample);
@@ -112,7 +109,6 @@ BatchesTab::BatchesTab(DryCleaningShop& shop, Id employee_id, const ShopForecast
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(filter_tabs_);
     layout->addWidget(stage_filter_, 0, Qt::AlignLeft);
-    layout->addWidget(read_only_hint_);
     layout->addWidget(table_);
 
     connect(filter_tabs_, &QTabBar::currentChanged, this, &BatchesTab::refresh);
@@ -144,9 +140,7 @@ void BatchesTab::refresh() {
     const bool has_unfinished = std::any_of(shown.begin(), shown.end(), [](const Batch* batch) {
         return batch->status() != BatchStatus::Completed;
     });
-    const bool may_process = has_permission(shop_, employee_id_, Permission::ChangeStatus);
-    table_->setColumnHidden(table_->actions_column(), !has_unfinished || !may_process);
-    read_only_hint_->setVisible(!may_process && filter != Completed);
+    table_->setColumnHidden(table_->actions_column(), !has_unfinished);
     table_->reset_rows(static_cast<int>(shown.size()));
     const int current_year = local_date_time(forecast_.now).date().year();
     int row = 0;
@@ -186,14 +180,19 @@ void BatchesTab::fill_row(int row, const Batch& batch, int current_year) {
 
     const Id id = batch.id();
     auto* actions = make_row_actions(table_, row, id);
+    const bool may_process = has_permission(shop_, employee_id_, Permission::ChangeStatus);
     if (status == BatchStatus::Scheduled) {
         auto* action = add_row_action(actions, QStringLiteral("Начать обработку"), [this, id] { start(id); },
-                                      qt_convert::text(shop_.batch_start_block(id, forecast_.now)));
+            may_process ? qt_convert::text(shop_.batch_start_block(id, forecast_.now))
+                        : QStringLiteral("Для запуска партии нужны права оператора."));
         action->setAccessibleName(QStringLiteral("Начать обработку партии №%1").arg(id));
     } else {
-        const QString unavailable = status == BatchStatus::InProgress
-            ? QStringLiteral("Конец цикла в %1.").arg(format_batch_time(projection.end, current_year))
-            : QString();
+        QString unavailable;
+        if (!may_process) {
+            unavailable = QStringLiteral("Для завершения партии нужны права оператора.");
+        } else if (status == BatchStatus::InProgress) {
+            unavailable = QStringLiteral("Конец цикла в %1.").arg(format_batch_time(projection.end, current_year));
+        }
         auto* action = add_row_action(actions, QStringLiteral("Завершить партию"), [this, id] { complete(id); }, unavailable);
         action->setAccessibleName(QStringLiteral("Завершить партию №%1").arg(id));
     }

@@ -196,10 +196,6 @@ QWidget* ItemDialog::build_services_page() {
     service_box_->setAccessibleName(QStringLiteral("Услуга"));
     service_box_->setPlaceholderText(QStringLiteral("Все услуги добавлены"));
     add_stage_button_ = new QPushButton(QStringLiteral("Добавить этап"), page);
-    service_hint_ = new QLabel(page);
-    service_hint_->setWordWrap(true);
-    stages_hint_ = new QLabel(page);
-    stages_hint_->setWordWrap(true);
 
     auto* controls = new QHBoxLayout;
     controls->addWidget(service_box_, kStretch);
@@ -214,10 +210,8 @@ QWidget* ItemDialog::build_services_page() {
 
     auto* layout = new QVBoxLayout(page);
     layout->addLayout(controls);
-    layout->addWidget(service_hint_);
     layout->addWidget(order_hint);
     layout->addWidget(stages_table_, kStretch);
-    layout->addWidget(stages_hint_);
 
     connect(add_stage_button_, &QPushButton::clicked, this, &ItemDialog::add_stage);
     connect(service_box_, &QComboBox::currentIndexChanged, this, &ItemDialog::refresh_service_choice);
@@ -228,15 +222,14 @@ void ItemDialog::show_step(int page) {
     pages_->setCurrentIndex(page);
     step_label_->setText(QStringLiteral("Шаг %1 из %2 · %3").arg(page + 1).arg(kStepTitles.size())
                              .arg(QString::fromUtf8(kStepTitles[page])));
-    back_button_->setVisible(page != ItemStep);
+    set_action_availability(back_button_, page == ItemStep ? QStringLiteral("Это первый шаг.") : QString());
     next_button_->setText(page == ServicesStep ? QStringLiteral("Готово") : QStringLiteral("Далее"));
     error_label_->clear();
     if (page == ServicesStep) {
         refresh_stages();
         service_box_->setFocus();
     } else {
-        next_button_->setEnabled(true);
-        next_button_->setAccessibleDescription({});
+        set_action_availability(next_button_, {});
         if (page == ItemStep) kind_edit_->setFocus();
         else soil_box_->setFocus();
     }
@@ -359,11 +352,7 @@ void ItemDialog::refresh_service_choice() {
     const bool has_choice = service_box_->currentIndex() >= 0;
     const QString hint = has_choice ? service_block(enum_value<ServiceType>(service_box_))
                                     : QStringLiteral("Все услуги уже добавлены.");
-    add_stage_button_->setEnabled(has_choice && hint.isEmpty());
-    service_hint_->setText(hint);
-    service_hint_->setVisible(!hint.isEmpty());
-    add_stage_button_->setToolTip(hint);
-    add_stage_button_->setAccessibleDescription(hint);
+    set_action_availability(add_stage_button_, hint);
 }
 
 void ItemDialog::refresh_stages() {
@@ -421,10 +410,7 @@ void ItemDialog::refresh_stages() {
     const QString hint = stages_.empty() ? QStringLiteral("Добавьте хотя бы один этап.")
         : first_unavailable.isEmpty() ? QString()
         : first_unavailable + QStringLiteral(" Уберите недоступный этап или измените данные изделия.");
-    stages_hint_->setText(hint);
-    stages_hint_->setVisible(!hint.isEmpty());
-    next_button_->setEnabled(hint.isEmpty());
-    next_button_->setAccessibleDescription(hint);
+    set_action_availability(next_button_, hint);
 }
 
 void ItemDialog::add_stage() {

@@ -49,14 +49,11 @@ OrderItemsDialog::OrderItemsDialog(DryCleaningShop& shop, Id employee_id, Id ord
     table_ = new TableWidget(make_headers(kItemHeaders), this, true);
     table_->set_text_columns({ItemKind, ItemMaterial});
     table_->set_text_columns({ItemService}, ColumnKind::WideText);
-    edit_hint_ = new QLabel(this);
-    edit_hint_->setWordWrap(true);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("Закрыть"));
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(summary_label_);
-    layout->addWidget(edit_hint_);
     layout->addWidget(table_, kStretch);
     layout->addWidget(buttons);
 
@@ -64,9 +61,12 @@ OrderItemsDialog::OrderItemsDialog(DryCleaningShop& shop, Id employee_id, Id ord
     refresh();
 }
 
-bool OrderItemsDialog::can_edit() const {
-    return has_permission(shop_, employee_id_, Permission::AcceptOrders) &&
-           shop_.is_order_editable(order_id_);
+QString OrderItemsDialog::edit_block() const {
+    if (!has_permission(shop_, employee_id_, Permission::AcceptOrders)) {
+        return QStringLiteral("Для изменения изделий нужны права приёмщика.");
+    }
+    return shop_.is_order_editable(order_id_) ? QString()
+        : QStringLiteral("Изделия можно изменить до передачи заказа в обработку.");
 }
 
 void OrderItemsDialog::refresh() {
@@ -77,12 +77,7 @@ void OrderItemsDialog::refresh() {
                                      qt_convert::format_time(order.deadline())));
     const std::optional<Id> selected = selected_id(table_, ItemId);
     const QSignalBlocker blocker(table_);
-    const bool editable = can_edit();
-    table_->setColumnHidden(table_->actions_column(), !editable);
-    edit_hint_->setVisible(!editable);
-    edit_hint_->setText(shop_.is_order_editable(order_id_)
-        ? QStringLiteral("Для изменения изделий нужны права приёмщика.")
-        : QStringLiteral("Изделия можно изменить до передачи заказа в обработку."));
+    const auto unavailable = edit_block();
     table_->reset_rows(static_cast<int>(order.item_ids().size()));
     int row = 0;
     std::vector<Id> item_ids = order.item_ids();
@@ -107,11 +102,9 @@ void OrderItemsDialog::refresh() {
         const auto completed = static_cast<qulonglong>(item.completed_batches().size());
         set_sortable_cell(table_, row, ItemProgress, QStringLiteral("%1 из %2").arg(completed).arg(item.services().size()),
                           completed);
-        if (editable) {
-            add_edit_action(make_row_actions(table_, row, id),
-                            QStringLiteral("Изменить изделие %1").arg(qt_convert::text(item.tag())),
-                            [this, id] { edit_item(id); });
-        }
+        add_edit_action(make_row_actions(table_, row, id),
+                        QStringLiteral("Изменить изделие %1").arg(qt_convert::text(item.tag())),
+                        [this, id] { edit_item(id); }, unavailable);
         ++row;
     }
     table_->finish_rows();
@@ -119,9 +112,9 @@ void OrderItemsDialog::refresh() {
 }
 
 void OrderItemsDialog::edit_item(Id id) {
-    if (!check_action_permission(this, shop_, employee_id_, Permission::AcceptOrders)) return;
-    if (!shop_.is_order_editable(order_id_)) {
-        show_action_refusal(this, QStringLiteral("Изделия можно изменить до передачи заказа в обработку."));
+    const auto unavailable = edit_block();
+    if (!unavailable.isEmpty()) {
+        show_action_refusal(this, unavailable);
         refresh();
         return;
     }

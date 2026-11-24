@@ -144,9 +144,6 @@ QWidget* MainWindow::build_clients_tab() {
 
     add_client_button_ = new QPushButton(QStringLiteral("Добавить"), page);
     layout->addWidget(add_client_button_, 0, Qt::AlignLeft);
-    clients_read_only_hint_ = new QLabel(QStringLiteral("Для изменения списка клиентов нужны права приёмщика."), page);
-    clients_read_only_hint_->setWordWrap(true);
-    layout->addWidget(clients_read_only_hint_);
     client_search_ = new QLineEdit(page);
     client_search_->setPlaceholderText(QStringLiteral("Поиск по имени или телефону"));
     client_search_->setAccessibleName(QStringLiteral("Поиск клиентов"));
@@ -243,9 +240,8 @@ void MainWindow::refresh_clients() {
     run_guarded(this, [this] {
         const auto id = selected_id(clients_table_, ClientId);
         const bool allowed = has_permission(shop_, employee_id_, Permission::ManageClients);
-        add_client_button_->setVisible(allowed);
-        clients_read_only_hint_->setVisible(!allowed);
-        clients_table_->setColumnHidden(clients_table_->actions_column(), !allowed);
+        const auto permission_reason = allowed ? QString() : QStringLiteral("Для изменения списка клиентов нужны права приёмщика.");
+        set_action_availability(add_client_button_, permission_reason);
         const QSignalBlocker blocker(clients_table_);
         std::vector<Client> found = shop_.search_clients(client_search_->text().toStdString());
         std::stable_sort(found.begin(), found.end(), [](const Client& left, const Client& right) {
@@ -261,16 +257,14 @@ void MainWindow::refresh_clients() {
             set_sortable_cell(clients_table_, row, ClientDiscount, qt_convert::text(format_percent(client.discount())),
                               client.discount(), true);
             set_cell(clients_table_, row, ClientOrders, client.orders_count());
-            if (allowed) {
-                const Id client_id = client.id();
-                auto* actions = make_row_actions(clients_table_, row, client_id);
-                add_edit_action(actions, QStringLiteral("Изменить клиента №%1").arg(client_id),
-                                [this, client_id] { edit_client(client_id); });
-                add_remove_action(actions, QStringLiteral("Удалить клиента №%1").arg(client_id),
-                                  [this, client_id] { remove_client(client_id); },
-                                  shop_.can_remove_client(client_id) ? QString()
-                                      : QStringLiteral("У клиента есть заказы."));
-            }
+            const Id client_id = client.id();
+            auto* actions = make_row_actions(clients_table_, row, client_id);
+            add_edit_action(actions, QStringLiteral("Изменить клиента №%1").arg(client_id),
+                            [this, client_id] { edit_client(client_id); }, permission_reason);
+            const auto removal_reason = allowed && !shop_.can_remove_client(client_id)
+                ? QStringLiteral("У клиента есть заказы") : permission_reason;
+            add_remove_action(actions, QStringLiteral("Удалить клиента №%1").arg(client_id),
+                              [this, client_id] { remove_client(client_id); }, removal_reason);
             ++row;
         }
         clients_table_->set_empty_text(!client_search_->text().trimmed().isEmpty()
@@ -302,7 +296,8 @@ void MainWindow::refresh_orders() {
             return left.created_at() < right.created_at();
         });
         const bool allowed = has_permission(shop_, employee_id_, Permission::AcceptOrders);
-        accept_order_button_->setVisible(allowed);
+        set_action_availability(accept_order_button_, allowed ? QString()
+            : QStringLiteral("Для приёма заказов нужны права приёмщика."));
         orders_table_->set_empty_text(order_filters_->checkedId() == static_cast<int>(OrderStatus::Accepted) && allowed
             ? QStringLiteral("Принятых заказов пока нет. Нажмите «Принять заказ».")
             : QStringLiteral("Для выбранного фильтра заказов нет."));
@@ -348,27 +343,36 @@ void MainWindow::refresh_orders() {
 void MainWindow::fill_order_actions(int row, const Order& order, TimePoint now) {
     const Id id = order.id();
     auto* actions = make_row_actions(orders_table_, row, id);
-    if (order.status() == OrderStatus::InProgress &&
-        has_permission(shop_, employee_id_, Permission::ChangeStatus)) {
+    if (order.status() == OrderStatus::InProgress) {
         const auto completed_at = shop_.order_processing_completed_at(id);
         QString unavailable;
-        if (!completed_at) {
+        if (!has_permission(shop_, employee_id_, Permission::ChangeStatus)) {
+            unavailable = QStringLiteral("Для отметки о готовности нужны права оператора.");
+        } else if (!completed_at) {
             unavailable = QStringLiteral("Завершите этапы во вкладке «Партии».");
         } else if (now < *completed_at) {
             unavailable = QStringLiteral("Готовность доступна после %1.").arg(qt_convert::format_time(*completed_at));
         }
         add_row_action(actions, QStringLiteral("Отметить готовым"), [this, id] { mark_order_ready(id); }, unavailable);
-    } else if (order.status() == OrderStatus::Ready && has_permission(shop_, employee_id_, Permission::IssueOrders)) {
+    } else if (order.status() == OrderStatus::Ready) {
         const auto ready_at = order.actual_ready_at();
-        const QString unavailable = ready_at && now < *ready_at
-            ? QStringLiteral("Выдача доступна после %1.").arg(qt_convert::format_time(*ready_at)) : QString();
+        QString unavailable;
+        if (!has_permission(shop_, employee_id_, Permission::IssueOrders)) {
+            unavailable = QStringLiteral("Для выдачи заказов нужны права приёмщика.");
+        } else if (ready_at && now < *ready_at) {
+            unavailable = QStringLiteral("Выдача доступна после %1.").arg(qt_convert::format_time(*ready_at));
+        }
         add_row_action(actions, QStringLiteral("Выдать клиенту"), [this, id] { issue_order(id); }, unavailable);
     } else if (order.status() == OrderStatus::Accepted) {
         orders_table_->item(row, OrderStatusName)->setToolTip(
             QStringLiteral("Заказ перейдёт в обработку после подтверждения плана для его изделий."));
-        if (has_permission(shop_, employee_id_, Permission::AcceptOrders) && shop_.is_order_editable(id)) {
-            add_remove_action(actions, QStringLiteral("Удалить заказ"), [this, id] { remove_order(id); });
+        QString unavailable;
+        if (!has_permission(shop_, employee_id_, Permission::AcceptOrders)) {
+            unavailable = QStringLiteral("Для удаления заказов нужны права приёмщика.");
+        } else if (!shop_.is_order_editable(id)) {
+            unavailable = QStringLiteral("Удалить заказ можно до передачи в обработку.");
         }
+        add_remove_action(actions, QStringLiteral("Удалить заказ"), [this, id] { remove_order(id); }, unavailable);
     }
     auto* menu = add_more_actions(actions, QStringLiteral("Действия с заказом №%1").arg(id));
     menu->addAction(QStringLiteral("Изделия заказа"), this, [this, id] { show_order_items(id); });

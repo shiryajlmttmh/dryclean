@@ -2,7 +2,6 @@
 
 #include <QDialog>
 #include <QHBoxLayout>
-#include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
@@ -11,18 +10,14 @@
 #include "gui/table_utils.h"
 
 TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission, const QStringList& headers,
-                   std::initializer_list<int> text_columns, QWidget* parent, bool has_view_actions)
-    : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission),
-      has_view_actions_(has_view_actions) {
+                   std::initializer_list<int> text_columns, QWidget* parent)
+    : QWidget(parent), shop_(shop), employee_id_(employee_id), permission_(permission) {
     add_button_ = new QPushButton(QStringLiteral("Добавить"), this);
-    read_only_hint_ = new QLabel(QStringLiteral("Только просмотр. У вашей роли нет прав на изменения."), this);
-    read_only_hint_->setWordWrap(true);
     table_ = new TableWidget(headers, this, true);
     table_->set_text_columns(text_columns);
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(add_button_, 0, Qt::AlignLeft);
-    layout->addWidget(read_only_hint_);
     layout->addWidget(table_);
 
     connect(add_button_, &QPushButton::clicked, this, [this] {
@@ -32,29 +27,28 @@ TableTab::TableTab(DryCleaningShop& shop, Id employee_id, Permission permission,
 
 void TableTab::refresh() {
     const bool allowed = is_allowed();
-    const bool show_actions = allowed || has_view_actions_;
-    add_button_->setVisible(allowed);
-    read_only_hint_->setVisible(!allowed);
-    table_->setColumnHidden(table_->actions_column(), !show_actions);
+    const auto permission_reason = allowed ? QString() : QStringLiteral("У вашей роли нет прав на изменения.");
+    set_action_availability(add_button_, permission_reason);
     const auto selected = selected_id(table_, 0);
     const QSignalBlocker blocker(table_);
     table_->set_empty_text(allowed ? QStringLiteral("Нет записей. Нажмите «Добавить» для создания записи.")
                                    : QStringLiteral("Нет записей."));
     fill(table_);
-    for (int row = 0; show_actions && row < table_->rowCount(); ++row) {
+    for (int row = 0; row < table_->rowCount(); ++row) {
         const Id id = table_->item(row, 0)->text().toUInt();
         auto* actions = make_row_actions(table_, row, id);
-        if (allowed) {
-            add_edit_action(actions, QStringLiteral("Изменить запись №%1").arg(id),
-                            [this, id] { if (check_action_permission(this, shop_, employee_id_, permission_)) edit_record(id); });
-            add_remove_action(actions, QStringLiteral("Удалить запись №%1").arg(id),
-                              [this, id] { confirm_removal(id); }, removal_block(id));
-        }
+        add_edit_action(actions, QStringLiteral("Изменить запись №%1").arg(id),
+                        [this, id] { if (check_action_permission(this, shop_, employee_id_, permission_)) edit_record(id); },
+                        permission_reason);
+        add_remove_action(actions, QStringLiteral("Удалить запись №%1").arg(id),
+                          [this, id] { confirm_removal(id); }, allowed ? removal_block(id) : permission_reason);
         add_extra_actions(actions, id);
     }
     table_->finish_rows();
     restore_selected_id(table_, 0, selected);
 }
+
+TableWidget& TableTab::table() const noexcept { return *table_; }
 
 bool TableTab::is_allowed() const { return has_permission(shop_, employee_id_, permission_); }
 

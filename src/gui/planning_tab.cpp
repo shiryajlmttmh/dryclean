@@ -120,7 +120,6 @@ PlanningTab::PlanningTab(DryCleaningShop& shop, Id employee_id, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(toolbar);
-    action_hint_ = add_text(layout, {});
     summary_label_ = add_text(layout, {});
 
     auto* panels = new QSplitter(Qt::Horizontal, this);
@@ -178,26 +177,15 @@ void PlanningTab::update_controls(const Plan* preview, const QString& stale) {
     const bool may_confirm = has_permission(shop_, employee_id_, Permission::ConfirmPlan);
     const QString build_hint = may_build ? (candidate_count_ ? QString() : QStringLiteral("Нет изделий для планирования."))
                                          : QStringLiteral("Для построения плана нужны права оператора.");
-    build_button_->setEnabled(build_hint.isEmpty());
-    build_button_->setToolTip(build_hint);
-    build_button_->setAccessibleDescription(build_hint);
-    confirm_button_->setEnabled(preview && !preview->batches.empty() && may_confirm);
+    set_action_availability(build_button_, build_hint);
     QString confirm_hint;
     if (!may_confirm) confirm_hint = QStringLiteral("Для подтверждения плана нужны права оператора.");
     else if (!stale.isEmpty()) confirm_hint = stale;
     else if (!preview) confirm_hint = QStringLiteral("Сначала постройте план.");
     else if (preview->batches.empty()) confirm_hint = QStringLiteral("В плане нет партий для подтверждения.");
-    confirm_button_->setToolTip(confirm_hint);
-    confirm_button_->setAccessibleDescription(confirm_hint);
-    QStringList hints;
-    if (!build_hint.isEmpty()) hints << build_hint;
-    if (!confirm_hint.isEmpty() && (stale.isEmpty() || confirm_hint != stale)) hints << confirm_hint;
-    action_hint_->setText(hints.join(QStringLiteral(" ")));
-    action_hint_->setVisible(!hints.isEmpty());
+    set_action_availability(confirm_button_, confirm_hint);
 
-    if (!stale.isEmpty()) {
-        summary_label_->setText(stale);
-    } else if (preview) {
+    if (preview) {
         summary_label_->setText(QStringLiteral("Предварительный план · Распределено %1 из %2 · Партий: %3 · Не размещено: %4")
             .arg(candidate_count_ - preview->unplaced.size()).arg(candidate_count_)
             .arg(preview->batches.size()).arg(preview->unplaced.size()));
