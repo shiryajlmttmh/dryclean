@@ -12,9 +12,9 @@
 
 #include "types.h"
 
-class QAction;
 class QEvent;
 class QHBoxLayout;
+class QIcon;
 class QMenu;
 class QToolButton;
 
@@ -85,9 +85,12 @@ QVariant time_sort_value(std::optional<TimePoint> value);
 QHBoxLayout* make_row_actions(TableWidget* table, int row, Id id);
 QToolButton* add_row_action(QHBoxLayout* layout, const QString& text, const std::function<void()>& action,
                             const QString& unavailable = {});
+QToolButton* add_row_action(QHBoxLayout* layout, const QString& text, const QString& name,
+                            const std::function<void()>& action, const QString& unavailable = {});
+void add_row_icon_action(QHBoxLayout* layout, const QIcon& icon, const QString& name,
+                         const std::function<void()>& action, const QString& unavailable = {});
 void add_edit_action(QHBoxLayout* layout, const QString& name, const std::function<void()>& action,
                      const QString& unavailable = {});
 void add_remove_action(QHBoxLayout* layout, const QString& name, const std::function<void()>& action,
                        const QString& unavailable = {});
-void set_menu_action_unavailable(QAction* action, const QString& reason);
 QMenu* add_more_actions(QHBoxLayout* layout, const QString& name);

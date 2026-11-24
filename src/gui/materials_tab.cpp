@@ -6,7 +6,6 @@
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QLineEdit>
-#include <QMenu>
 #include <QStringList>
 #include <array>
 
@@ -104,16 +103,14 @@ void MaterialsTab::fill(TableWidget* table) {
 }
 
 void MaterialsTab::add_extra_actions(QHBoxLayout* actions, Id id) {
-    auto* menu = add_more_actions(actions, QStringLiteral("Операции со складской записью №%1").arg(id));
-    auto* restock_action = menu->addAction(QStringLiteral("Пополнить"), this, [this, id] { restock(id); });
-    auto* write_off = menu->addAction(QStringLiteral("Списать"), this, [this, id] { this->write_off(id); });
-    if (!is_allowed()) {
-        const auto reason = QStringLiteral("У вашей роли нет прав на изменение остатков.");
-        set_menu_action_unavailable(restock_action, reason);
-        set_menu_action_unavailable(write_off, reason);
-    } else if (shop_.materials().get(id).stock() <= 0.0) {
-        set_menu_action_unavailable(write_off, QStringLiteral("Сначала пополните остаток материала."));
-    }
+    const auto permission_block = is_allowed()
+        ? QString() : QStringLiteral("У вашей роли нет прав на изменение остатков.");
+    const auto write_off_block = permission_block.isEmpty() && shop_.materials().get(id).stock() <= 0.0
+        ? QStringLiteral("Сначала пополните остаток материала.") : permission_block;
+    add_row_action(actions, QStringLiteral("+"), QStringLiteral("Пополнить"),
+                   [this, id] { restock(id); }, permission_block);
+    add_row_action(actions, QStringLiteral("−"), QStringLiteral("Списать"),
+                   [this, id] { write_off(id); }, write_off_block);
 }
 
 void MaterialsTab::add_record() {

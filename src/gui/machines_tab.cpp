@@ -10,8 +10,9 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QMenu>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QStyle>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QToolButton>
@@ -54,6 +55,15 @@ constexpr auto kFreeTimeColor = "#86cfa5";
 constexpr auto kCompletedBatchColor = "#5d9bd3";
 constexpr auto kRunningBatchColor = "#ab8be3";
 constexpr auto kScheduledBatchColor = "#efad55";
+constexpr int kMaintenanceIconSize = 16;
+constexpr QLineF kWrenchHandle{3, 13, 9, 7};
+constexpr QPointF kWrenchJawBottom{9, 7};
+constexpr QPointF kWrenchJawInner{11, 5};
+constexpr QPointF kWrenchJawTop{10, 2};
+constexpr QPointF kWrenchJawOuter{13, 3};
+constexpr QPointF kWrenchJawEnd{14, 6};
+constexpr QPointF kWrenchShoulder{12, 8};
+constexpr qreal kWrenchStrokeWidth = 1.5;
 
 enum HistoryColumn { HistoryBatch, HistoryStart, HistoryReady, HistoryStatus, HistoryCompleted, HistoryColumnCount };
 
@@ -63,6 +73,22 @@ constexpr std::array<const char*, MachineColumnCount> kMachineHeaders{"№", "Н
                                                                       "Доступность", "До ТО, ч"};
 constexpr std::array<const char*, HistoryColumnCount> kHistoryHeaders{
     "Партия", "Начало", "Конец цикла", "Статус", "Подтверждение завершения"};
+
+QIcon maintenance_icon(const QWidget* widget) {
+    const auto scale = widget->devicePixelRatioF();
+    const auto size = qRound(kMaintenanceIconSize * scale);
+    QPixmap pixmap(size, size);
+    pixmap.setDevicePixelRatio(scale);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(widget->palette().color(QPalette::ButtonText), kWrenchStrokeWidth,
+                        Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawLine(kWrenchHandle);
+    painter.drawPolyline(QPolygonF{kWrenchJawTop, kWrenchJawInner, kWrenchJawOuter,
+                                  kWrenchJawEnd, kWrenchShoulder, kWrenchJawBottom});
+    return QIcon(pixmap);
+}
 
 QDate first_day(QDate date, bool weekly) {
     return weekly ? date.addDays(1 - date.dayOfWeek()) : date;
@@ -251,14 +277,17 @@ MachinesTab::MachinesTab(DryCleaningShop& shop, Id employee_id, const ShopForeca
 void MachinesTab::refresh_history() { emit forecast_changed(); }
 
 void MachinesTab::add_extra_actions(QHBoxLayout* actions, Id id) {
-    add_row_action(actions, QStringLiteral("Занятость"), [this, id] { show_history(id); });
-    auto* menu = add_more_actions(actions, QStringLiteral("Обслуживание машины №%1").arg(id));
-    auto* service = menu->addAction(QStringLiteral("Выполнить ТО"), this, [this, id] { service_machine(id); });
+    const auto history_icon = style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+    add_row_icon_action(actions, history_icon, QStringLiteral("Занятость машины"), [this, id] { show_history(id); });
+
+    QString unavailable;
     if (!is_allowed()) {
-        set_menu_action_unavailable(service, QStringLiteral("Для обслуживания машины нужны права администратора."));
+        unavailable = QStringLiteral("Для обслуживания машины нужны права администратора.");
     } else if (!shop_.can_service_machine(id, forecast_.now)) {
-        set_menu_action_unavailable(service, QStringLiteral("Сначала завершите все партии машины."));
+        unavailable = QStringLiteral("Сначала завершите все партии машины.");
     }
+    add_row_icon_action(actions, maintenance_icon(this), QStringLiteral("Выполнить ТО"),
+                         [this, id] { service_machine(id); }, unavailable);
 }
 
 QString MachinesTab::removal_block(Id id) const {

@@ -1,10 +1,8 @@
 #include "gui/table_utils.h"
 
-#include <QAction>
 #include <QApplication>
 #include <QEvent>
 #include <QHeaderView>
-#include <QHelpEvent>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QMenu>
@@ -14,7 +12,6 @@
 #include <QStyleOptionViewItem>
 #include <QTimer>
 #include <QToolButton>
-#include <QToolTip>
 #include <algorithm>
 
 #include "gui/helpers.h"
@@ -113,24 +110,6 @@ QIcon edit_icon(const QWidget* widget) {
     painter.drawLine(kPencilCapLeft, kPencilCapRight);
     return QIcon(pixmap);
 }
-
-class RowActionMenu final : public QMenu {
-public:
-    using QMenu::QMenu;
-
-protected:
-    bool event(QEvent* event) override {
-        if (event->type() == QEvent::ToolTip) {
-            const auto* help = static_cast<QHelpEvent*>(event);
-            auto* action = actionAt(help->pos());
-            if (action && !action->isEnabled()) {
-                QToolTip::showText(help->globalPos(), action->toolTip(), this, actionGeometry(action));
-                return true;
-            }
-        }
-        return QMenu::event(event);
-    }
-};
 
 QToolButton* make_action_button(QHBoxLayout* layout, const QString& name, const QString& unavailable) {
     auto* button = new QToolButton(layout->parentWidget());
@@ -432,10 +411,22 @@ QHBoxLayout* make_row_actions(TableWidget* table, int row, Id id) {
 
 QToolButton* add_row_action(QHBoxLayout* layout, const QString& text, const std::function<void()>& action,
                             const QString& unavailable) {
-    auto* button = make_action_button(layout, text, unavailable);
+    return add_row_action(layout, text, text, action, unavailable);
+}
+
+QToolButton* add_row_action(QHBoxLayout* layout, const QString& text, const QString& name,
+                            const std::function<void()>& action, const QString& unavailable) {
+    auto* button = make_action_button(layout, name, unavailable);
     button->setText(text);
     QObject::connect(button, &QToolButton::clicked, button, action);
     return button;
+}
+
+void add_row_icon_action(QHBoxLayout* layout, const QIcon& icon, const QString& name,
+                         const std::function<void()>& action, const QString& unavailable) {
+    auto* button = make_action_button(layout, name, unavailable);
+    button->setIcon(icon);
+    QObject::connect(button, &QToolButton::clicked, button, action);
 }
 
 void add_edit_action(QHBoxLayout* layout, const QString& name, const std::function<void()>& action,
@@ -452,15 +443,10 @@ void add_remove_action(QHBoxLayout* layout, const QString& name, const std::func
     QObject::connect(button, &QToolButton::clicked, button, action);
 }
 
-void set_menu_action_unavailable(QAction* action, const QString& reason) {
-    action->setEnabled(false);
-    action->setToolTip(reason);
-}
-
 QMenu* add_more_actions(QHBoxLayout* layout, const QString& name) {
     auto* button = make_action_button(layout, name, {});
     button->setText(QStringLiteral("⋯"));
-    auto* menu = new RowActionMenu(button);
+    auto* menu = new QMenu(button);
     button->setMenu(menu);
     button->setPopupMode(QToolButton::InstantPopup);
     return menu;
