@@ -56,6 +56,8 @@ constexpr int kClockRefreshMs = 30000;
 constexpr int kPopupRefreshRetryMs = 250;
 constexpr const char* kStatusSeparator = "   |   ";
 
+const auto kReadyLateText = QStringLiteral("Готов с опозданием");
+
 enum OrderHistoryColumn { HistoryTimestamp, HistoryStatus, HistoryEmployee };
 
 enum ClientColumn { ClientId, ClientName, ClientPhone, ClientDiscount, ClientOrders, ClientColumnCount };
@@ -193,6 +195,7 @@ QWidget* MainWindow::build_orders_tab() {
     orders_table_ = new TableWidget(make_headers(kOrderHeaders), page, true);
     orders_table_->set_text_columns({OrderClient, OrderReady});
     orders_table_->set_text_columns({OrderService}, ColumnKind::WideText);
+    orders_table_->reserve_column_text(OrderDeadlineState, {kReadyLateText});
     layout->addWidget(orders_table_);
 
     connect(order_filters_, &QButtonGroup::idToggled, this, [this](int, bool checked) {
@@ -330,8 +333,11 @@ void MainWindow::refresh_orders() {
                 : qt_convert::format_time(projection.ready_at);
             set_sortable_cell(orders_table_, row, OrderReady, ready,
                               time_sort_value(actual ? actual : projection.ready_at));
-            set_cell(orders_table_, row, OrderDeadlineState, projection.overdue ? QStringLiteral("Просрочен")
-                : projection.at_risk ? QStringLiteral("Риск просрочки") : QStringLiteral("-"));
+            const QString deadline_state = actual
+                ? (*actual <= order.deadline() ? QStringLiteral("Вовремя") : kReadyLateText)
+                : projection.overdue ? QStringLiteral("Просрочен")
+                : projection.at_risk ? QStringLiteral("Риск просрочки") : QStringLiteral("-");
+            set_cell(orders_table_, row, OrderDeadlineState, deadline_state);
             fill_order_actions(row, order, forecast_.now);
             ++row;
         }
